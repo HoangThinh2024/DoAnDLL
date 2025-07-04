@@ -3,6 +3,9 @@
 # Quick start script for Multimodal Pill Recognition System
 echo "🚀 Starting Multimodal Pill Recognition System..."
 
+# Ensure uv is in PATH
+export PATH="$HOME/.local/bin:$PATH"
+
 # Check if virtual environment exists
 if [ ! -d ".venv" ]; then
     echo "📦 Creating virtual environment with uv..."
