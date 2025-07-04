@@ -1,0 +1,137 @@
+[project]
+name = "multimodal-pill-recognition"
+version = "1.0.0"
+description = "Hệ thống nhận dạng viên thuốc multimodal với Transformer"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.8"
+keywords = ["machine-learning", "multimodal", "transformers", "computer-vision", "pill-recognition"]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    # Core dependencies
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.30.0",
+    "timm>=0.9.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "Pillow>=9.5.0",
+    "opencv-python>=4.7.0",
+    
+    # Streamlit UI
+    "streamlit>=1.25.0",
+    "streamlit-option-menu>=0.3.6",
+    "plotly>=5.15.0",
+    
+    # Big Data & Distributed Computing
+    "pyspark>=3.4.0",
+    "findspark>=2.0.1",
+    "pyarrow>=12.0.0",
+    
+    # Search & Indexing
+    "elasticsearch>=8.8.0",
+    "sentence-transformers>=2.2.2",
+    
+    # ML & Data Science
+    "scikit-learn>=1.3.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "tqdm>=4.65.0",
+    
+    # Configuration & Logging
+    "hydra-core>=1.3.0",
+    "wandb>=0.15.0",
+    "loguru>=0.7.0",
+    
+    # Image processing
+    "albumentations>=1.3.1",
+    "imgaug>=0.4.0",
+    
+    # Text processing
+    "nltk>=3.8.1",
+    "spacy>=3.6.0",
+]
+
+[project.optional-dependencies]
+gpu = [
+    # GPU Acceleration (Rapids) - only for x86_64 with NVIDIA GPU
+    "cudf-cu11>=23.06.0; platform_machine=='x86_64'",
+    "cuml-cu11>=23.06.0; platform_machine=='x86_64'",
+    "cupy-cuda11x>=12.0.0; platform_machine=='x86_64'",
+]
+
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/username/DoAnDLL"
+Repository = "https://github.com/username/DoAnDLL"
+Documentation = "https://github.com/username/DoAnDLL#readme"
+Issues = "https://github.com/username/DoAnDLL/issues"
+
+[project.scripts]
+pill-recognition = "app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true

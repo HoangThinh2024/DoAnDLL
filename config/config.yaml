@@ -1,0 +1,78 @@
+model:
+  name: "multimodal_pill_transformer"
+  visual_encoder:
+    type: "vit"  # vision_transformer or resnet
+    model_name: "vit_base_patch16_224"
+    pretrained: true
+    freeze_backbone: false
+    output_dim: 768
+  
+  text_encoder:
+    type: "bert"
+    model_name: "bert-base-uncased"
+    pretrained: true
+    freeze_backbone: false
+    output_dim: 768
+    max_length: 128
+  
+  fusion:
+    type: "cross_attention"  # concat, cross_attention, bilinear
+    hidden_dim: 512
+    num_attention_heads: 8
+    dropout: 0.1
+  
+  classifier:
+    num_classes: 1000  # Number of pill classes
+    hidden_dims: [512, 256]
+    dropout: 0.3
+
+training:
+  batch_size: 32
+  learning_rate: 1e-4
+  num_epochs: 100
+  warmup_steps: 1000
+  weight_decay: 0.01
+  gradient_clip_norm: 1.0
+  
+  optimizer: "adamw"
+  scheduler: "cosine_annealing"
+  
+  # Early stopping
+  patience: 10
+  min_delta: 0.001
+
+data:
+  image_size: 224
+  data_path: "./data"
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  
+  # Data augmentation
+  augmentation:
+    rotation: 15
+    brightness: 0.2
+    contrast: 0.2
+    saturation: 0.2
+    hue: 0.1
+    horizontal_flip: 0.5
+    
+  # Spark configuration
+  spark:
+    app_name: "PillRecognitionETL"
+    master: "local[*]"
+    executor_memory: "4g"
+    driver_memory: "2g"
+    max_result_size: "2g"
+
+logging:
+  level: "INFO"
+  log_dir: "./logs"
+  wandb:
+    project: "pill-recognition"
+    entity: "your-wandb-entity"
+
+inference:
+  model_path: "./checkpoints/best_model.pth"
+  confidence_threshold: 0.8
+  batch_size: 16
