@@ -5,6 +5,7 @@ from PIL import Image
 import cv2
 import yaml
 import os
+
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
