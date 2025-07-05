@@ -11,10 +11,22 @@ Date: 2024
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import BertModel, ViTModel, BertConfig, ViTConfig, AutoModel, AutoTokenizer
-import timm
-from typing import Dict, Tuple, Optional, Any
+from typing import Dict, Tuple, Optional, Any, List
 import math
+
+try:
+    from transformers import BertModel, ViTModel, BertConfig, ViTConfig, AutoModel, AutoTokenizer
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    print("Warning: transformers library not available")
+
+try:
+    import timm
+    TIMM_AVAILABLE = True
+except ImportError:
+    TIMM_AVAILABLE = False
+    print("Warning: timm library not available")
 
 
 class CrossModalAttention(nn.Module):
@@ -50,366 +62,343 @@ class CrossModalAttention(nn.Module):
         self.layer_norm = nn.LayerNorm(hidden_dim)
         
     def forward(self, 
-                query_features: torch.Tensor,
-                key_value_features: torch.Tensor,
-                attention_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+                visual_features: torch.Tensor, 
+                text_features: torch.Tensor,
+                visual_mask: Optional[torch.Tensor] = None,
+                text_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Forward pass for cross-modal attention.
+        Forward pass for cross-modal attention
         
         Args:
-            query_features: Features that will attend (B, seq_len_q, hidden_dim)
-            key_value_features: Features to attend to (B, seq_len_kv, hidden_dim)
-            attention_mask: Mask for attention weights (B, seq_len_q, seq_len_kv)
+            visual_features: [batch_size, visual_seq_len, hidden_dim]
+            text_features: [batch_size, text_seq_len, hidden_dim]
+            visual_mask: Optional attention mask for visual features
+            text_mask: Optional attention mask for text features
             
         Returns:
-            attended_features: Features after cross-attention (B, seq_len_q, hidden_dim)
-            attention_weights: Attention weights (B, num_heads, seq_len_q, seq_len_kv)
+            Tuple of attended visual and text features
         """
-        batch_size, seq_len_q, _ = query_features.shape
-        seq_len_kv = key_value_features.shape[1]
-        
-        # Project to Q, K, V
-        Q = self.query_projection(query_features)  # (B, seq_len_q, hidden_dim)
-        K = self.key_projection(key_value_features)  # (B, seq_len_kv, hidden_dim)
-        V = self.value_projection(key_value_features)  # (B, seq_len_kv, hidden_dim)
+        batch_size = visual_features.size(0)
         
         # Reshape for multi-head attention
-        Q = Q.view(batch_size, seq_len_q, self.num_attention_heads, self.head_dim).transpose(1, 2)
-        K = K.view(batch_size, seq_len_kv, self.num_attention_heads, self.head_dim).transpose(1, 2)
-        V = V.view(batch_size, seq_len_kv, self.num_attention_heads, self.head_dim).transpose(1, 2)
+        def reshape_for_attention(x):
+            return x.view(batch_size, -1, self.num_attention_heads, self.head_dim).transpose(1, 2)
+        
+        # Visual-to-text attention (visual queries attend to text keys/values)
+        v_queries = reshape_for_attention(self.query_projection(visual_features))
+        t_keys = reshape_for_attention(self.key_projection(text_features))
+        t_values = reshape_for_attention(self.value_projection(text_features))
         
         # Compute attention scores
-        attention_scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        v2t_scores = torch.matmul(v_queries, t_keys.transpose(-2, -1)) / math.sqrt(self.head_dim)
         
-        # Apply attention mask if provided
-        if attention_mask is not None:
-            attention_mask = attention_mask.unsqueeze(1).expand(-1, self.num_attention_heads, -1, -1)
-            attention_scores = attention_scores.masked_fill(attention_mask == 0, -1e9)
+        # Apply text mask if provided
+        if text_mask is not None:
+            text_mask = text_mask.unsqueeze(1).unsqueeze(1)  # [batch, 1, 1, text_seq_len]
+            v2t_scores = v2t_scores.masked_fill(text_mask == 0, float('-inf'))
         
-        # Compute attention weights
-        attention_weights = F.softmax(attention_scores, dim=-1)
-        attention_weights = self.dropout(attention_weights)
+        v2t_attention = F.softmax(v2t_scores, dim=-1)
+        v2t_attention = self.dropout(v2t_attention)
         
         # Apply attention to values
-        attended_values = torch.matmul(attention_weights, V)  # (B, num_heads, seq_len_q, head_dim)
+        v2t_output = torch.matmul(v2t_attention, t_values)
+        v2t_output = v2t_output.transpose(1, 2).contiguous().view(batch_size, -1, self.hidden_dim)
         
-        # Reshape and project
-        attended_values = attended_values.transpose(1, 2).contiguous().view(
-            batch_size, seq_len_q, self.hidden_dim
-        )
+        # Text-to-visual attention (text queries attend to visual keys/values)
+        t_queries = reshape_for_attention(self.query_projection(text_features))
+        v_keys = reshape_for_attention(self.key_projection(visual_features))
+        v_values = reshape_for_attention(self.value_projection(visual_features))
         
-        # Output projection with residual connection and layer norm
-        output = self.output_projection(attended_values)
-        output = self.layer_norm(output + query_features)
+        t2v_scores = torch.matmul(t_queries, v_keys.transpose(-2, -1)) / math.sqrt(self.head_dim)
         
-        return output, attention_weights
+        # Apply visual mask if provided
+        if visual_mask is not None:
+            visual_mask = visual_mask.unsqueeze(1).unsqueeze(1)  # [batch, 1, 1, visual_seq_len]
+            t2v_scores = t2v_scores.masked_fill(visual_mask == 0, float('-inf'))
+        
+        t2v_attention = F.softmax(t2v_scores, dim=-1)
+        t2v_attention = self.dropout(t2v_attention)
+        
+        t2v_output = torch.matmul(t2v_attention, v_values)
+        t2v_output = t2v_output.transpose(1, 2).contiguous().view(batch_size, -1, self.hidden_dim)
+        
+        # Add residual connections and layer normalization
+        attended_visual = self.layer_norm(visual_features + self.output_projection(v2t_output))
+        attended_text = self.layer_norm(text_features + self.output_projection(t2v_output))
+        
+        return attended_visual, attended_text
 
 
 class VisualEncoder(nn.Module):
     """
-    Vision Transformer encoder for processing pill images.
-    Enhanced version with better configuration and feature extraction.
+    Vision Transformer encoder for pill images
     """
     
     def __init__(self, 
-                 model_name: str = "google/vit-base-patch16-224",
-                 output_dim: int = 768, 
+                 model_name: str = "vit_base_patch16_224",
                  pretrained: bool = True,
-                 freeze_layers: int = 0,
-                 dropout: float = 0.1):
+                 freeze_backbone: bool = False,
+                 output_dim: int = 768):
         super().__init__()
         
         self.model_name = model_name
-        self.pretrained = pretrained
+        self.output_dim = output_dim
         
-        # Try to load ViT model from transformers, fallback to timm
-        try:
-            if pretrained:
-                self.vit = ViTModel.from_pretrained(model_name)
-                self.feature_dim = self.vit.config.hidden_size
-                self.use_transformers = True
-            else:
-                config = ViTConfig.from_pretrained(model_name)
-                self.vit = ViTModel(config)
-                self.feature_dim = config.hidden_size
-                self.use_transformers = True
-        except:
-            # Fallback to timm
-            self.backbone = timm.create_model(model_name, pretrained=pretrained, num_classes=0)
-            with torch.no_grad():
-                dummy_input = torch.randn(1, 3, 224, 224)
-                self.feature_dim = self.backbone(dummy_input).shape[-1]
-            self.use_transformers = False
+        # Load Vision Transformer from timm
+        if "vit" in model_name.lower():
+            self.backbone = timm.create_model(
+                model_name, 
+                pretrained=pretrained,
+                num_classes=0,  # Remove classification head
+                global_pool=''  # Remove global pooling to get patch features
+            )
+            self.feature_dim = self.backbone.num_features
+        else:
+            # Alternative: use ResNet or other models
+            self.backbone = timm.create_model(
+                model_name,
+                pretrained=pretrained,
+                num_classes=0,
+                global_pool='avg'
+            )
+            self.feature_dim = self.backbone.num_features
         
-        # Freeze specified number of layers
-        if freeze_layers > 0 and self.use_transformers:
-            for i, layer in enumerate(self.vit.encoder.layer):
-                if i < freeze_layers:
-                    for param in layer.parameters():
-                        param.requires_grad = False
+        # Freeze backbone if specified
+        if freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
         
-        # Projection layer if needed
+        # Projection layer to match hidden dimension
         if self.feature_dim != output_dim:
             self.projection = nn.Linear(self.feature_dim, output_dim)
         else:
             self.projection = nn.Identity()
-            
-        self.layer_norm = nn.LayerNorm(output_dim)
-        self.dropout = nn.Dropout(dropout)
-        
-    def forward(self, pixel_values: torch.Tensor) -> Dict[str, torch.Tensor]:
+    
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass for visual encoding.
+        Forward pass for visual encoder
         
         Args:
-            pixel_values: Input images (B, C, H, W)
+            images: [batch_size, 3, 224, 224]
             
         Returns:
-            Dictionary containing visual features and sequence output
+            Visual features: [batch_size, num_patches + 1, output_dim] for ViT
+                            or [batch_size, 1, output_dim] for CNN
         """
-        if self.use_transformers:
-            outputs = self.vit(pixel_values=pixel_values)
-            sequence_output = outputs.last_hidden_state  # (B, num_patches + 1, hidden_dim)
-            pooled_output = sequence_output[:, 0]  # (B, hidden_dim) - [CLS] token
-        else:
-            features = self.backbone(pixel_values)  # (B, feature_dim)
-            pooled_output = features
-            sequence_output = features.unsqueeze(1)  # Add sequence dimension
+        features = self.backbone(images)
         
-        # Apply projection, dropout and layer norm
-        pooled_output = self.projection(pooled_output)
-        pooled_output = self.layer_norm(pooled_output)
-        pooled_output = self.dropout(pooled_output)
+        # Handle different output shapes
+        if len(features.shape) == 2:  # [batch_size, feature_dim]
+            features = features.unsqueeze(1)  # [batch_size, 1, feature_dim]
         
-        # Process sequence output
-        if sequence_output.dim() == 3:
-            sequence_output = self.projection(sequence_output)
-            sequence_output = self.dropout(sequence_output)
+        # Project to desired dimension
+        features = self.projection(features)
         
-        return {
-            'sequence_output': sequence_output,
-            'pooled_output': pooled_output
-        }
+        return features
 
 
 class TextEncoder(nn.Module):
     """
-    BERT encoder for processing text imprints on pills.
-    Enhanced version with better tokenization and feature extraction.
+    BERT encoder for pill imprint text
     """
     
     def __init__(self,
                  model_name: str = "bert-base-uncased",
-                 output_dim: int = 768, 
-                 max_length: int = 128,
-                 dropout: float = 0.1):
+                 pretrained: bool = True,
+                 freeze_backbone: bool = False,
+                 output_dim: int = 768,
+                 max_length: int = 128):
         super().__init__()
         
         self.model_name = model_name
         self.max_length = max_length
+        self.output_dim = output_dim
         
-        # Load BERT model and tokenizer
-        self.model = AutoModel.from_pretrained(model_name)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # Load BERT model
+        if pretrained:
+            self.backbone = BertModel.from_pretrained(model_name)
+        else:
+            config = BertConfig.from_pretrained(model_name)
+            self.backbone = BertModel(config)
         
-        # Get the hidden dimension from the model
-        text_dim = self.model.config.hidden_size
+        self.feature_dim = self.backbone.config.hidden_size
         
-        # Projection layer if needed
-        if text_dim != output_dim:
-            self.projection = nn.Linear(text_dim, output_dim)
+        # Freeze backbone if specified
+        if freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+        
+        # Projection layer to match hidden dimension
+        if self.feature_dim != output_dim:
+            self.projection = nn.Linear(self.feature_dim, output_dim)
         else:
             self.projection = nn.Identity()
-            
-        self.layer_norm = nn.LayerNorm(output_dim)
-        self.dropout = nn.Dropout(dropout)
-        
+    
     def forward(self, 
                 input_ids: torch.Tensor,
-                attention_mask: torch.Tensor,
-                token_type_ids: Optional[torch.Tensor] = None) -> Dict[str, torch.Tensor]:
+                attention_mask: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass for text encoding.
+        Forward pass for text encoder
         
         Args:
-            input_ids: Token IDs (B, seq_len)
-            attention_mask: Attention mask (B, seq_len)
-            token_type_ids: Token type IDs (B, seq_len)
+            input_ids: [batch_size, seq_len]
+            attention_mask: [batch_size, seq_len]
             
         Returns:
-            Dictionary containing text features and sequence output
+            Text features: [batch_size, seq_len, output_dim]
         """
-        outputs = self.model(
+        outputs = self.backbone(
             input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids
+            attention_mask=attention_mask
         )
         
-        # Get sequence output and pooled output
-        sequence_output = outputs.last_hidden_state  # (B, seq_len, hidden_dim)
+        # Get sequence output (all token representations)
+        features = outputs.last_hidden_state  # [batch_size, seq_len, hidden_size]
         
-        # For pooled output, use [CLS] token or mean pooling
-        if hasattr(outputs, 'pooler_output') and outputs.pooler_output is not None:
-            pooled_output = outputs.pooler_output
-        else:
-            # Mean pooling with attention mask
-            pooled_output = (sequence_output * attention_mask.unsqueeze(-1)).sum(dim=1) / attention_mask.sum(dim=1, keepdim=True)
+        # Project to desired dimension
+        features = self.projection(features)
         
-        # Apply projection, dropout and layer norm
-        pooled_output = self.projection(pooled_output)
-        pooled_output = self.layer_norm(pooled_output)
-        pooled_output = self.dropout(pooled_output)
-        
-        # Process sequence output
-        sequence_output = self.projection(sequence_output)
-        sequence_output = self.dropout(sequence_output)
-        
-        return {
-            'sequence_output': sequence_output,
-            'pooled_output': pooled_output,
-            'attention_mask': attention_mask
-        }
+        return features
 
 
-class FusionLayer(nn.Module):
+class FeatureFusion(nn.Module):
     """
-    Fusion layer that combines visual and textual features through cross-modal attention.
+    Feature fusion module combining visual and text features
     """
     
     def __init__(self,
+                 fusion_type: str = "cross_attention",
                  hidden_dim: int = 768,
                  num_attention_heads: int = 8,
                  dropout: float = 0.1):
         super().__init__()
         
+        self.fusion_type = fusion_type
         self.hidden_dim = hidden_dim
         
-        # Cross-modal attention layers
-        self.visual_to_text_attention = CrossModalAttention(
-            hidden_dim=hidden_dim,
-            num_attention_heads=num_attention_heads,
-            dropout=dropout
-        )
-        
-        self.text_to_visual_attention = CrossModalAttention(
-            hidden_dim=hidden_dim,
-            num_attention_heads=num_attention_heads,
-            dropout=dropout
-        )
-        
-        # Feature fusion layers
-        self.fusion_projection = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim)
-        )
+        if fusion_type == "cross_attention":
+            self.cross_attention = CrossModalAttention(
+                hidden_dim=hidden_dim,
+                num_attention_heads=num_attention_heads,
+                dropout=dropout
+            )
+            self.fusion_projection = nn.Linear(hidden_dim * 2, hidden_dim)
+        elif fusion_type == "concat":
+            self.fusion_projection = nn.Linear(hidden_dim * 2, hidden_dim)
+        elif fusion_type == "bilinear":
+            self.bilinear = nn.Bilinear(hidden_dim, hidden_dim, hidden_dim)
+        else:
+            raise ValueError(f"Unknown fusion type: {fusion_type}")
         
         self.layer_norm = nn.LayerNorm(hidden_dim)
-        
+        self.dropout = nn.Dropout(dropout)
+    
     def forward(self,
                 visual_features: torch.Tensor,
                 text_features: torch.Tensor,
-                text_attention_mask: Optional[torch.Tensor] = None) -> Dict[str, torch.Tensor]:
+                visual_mask: Optional[torch.Tensor] = None,
+                text_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
-        Forward pass for feature fusion.
+        Fuse visual and text features
         
         Args:
-            visual_features: Visual features (B, num_patches, hidden_dim)
-            text_features: Text features (B, seq_len, hidden_dim)
-            text_attention_mask: Text attention mask (B, seq_len)
+            visual_features: [batch_size, visual_seq_len, hidden_dim]
+            text_features: [batch_size, text_seq_len, hidden_dim]
+            visual_mask: Optional attention mask for visual features
+            text_mask: Optional attention mask for text features
             
         Returns:
-            Dictionary containing fused features and attention weights
+            Fused features: [batch_size, hidden_dim]
         """
-        # Cross-modal attention: visual attends to text
-        visual_attended, v2t_attention = self.visual_to_text_attention(
-            query_features=visual_features,
-            key_value_features=text_features,
-            attention_mask=text_attention_mask.unsqueeze(1) if text_attention_mask is not None else None
-        )
-        
-        # Cross-modal attention: text attends to visual
-        text_attended, t2v_attention = self.text_to_visual_attention(
-            query_features=text_features,
-            key_value_features=visual_features
-        )
-        
-        # Pool attended features
-        if visual_attended.dim() == 3:
-            visual_pooled = visual_attended[:, 0]  # Use [CLS]-like token
-        else:
-            visual_pooled = visual_attended
+        if self.fusion_type == "cross_attention":
+            # Apply cross-modal attention
+            attended_visual, attended_text = self.cross_attention(
+                visual_features, text_features, visual_mask, text_mask
+            )
             
-        if text_attended.dim() == 3:
-            text_pooled = text_attended.mean(dim=1)  # Average pooling
-        else:
-            text_pooled = text_attended
+            # Global average pooling with mask consideration
+            if visual_mask is not None:
+                visual_mask = visual_mask.unsqueeze(-1).float()
+                attended_visual = (attended_visual * visual_mask).sum(1) / visual_mask.sum(1)
+            else:
+                attended_visual = attended_visual.mean(1)
+            
+            if text_mask is not None:
+                text_mask = text_mask.unsqueeze(-1).float()
+                attended_text = (attended_text * text_mask).sum(1) / text_mask.sum(1)
+            else:
+                attended_text = attended_text.mean(1)
+            
+            # Concatenate and project
+            fused = torch.cat([attended_visual, attended_text], dim=-1)
+            fused = self.fusion_projection(fused)
+            
+        elif self.fusion_type == "concat":
+            # Simple concatenation with pooling
+            visual_pooled = visual_features.mean(1)
+            text_pooled = text_features.mean(1)
+            fused = torch.cat([visual_pooled, text_pooled], dim=-1)
+            fused = self.fusion_projection(fused)
+            
+        elif self.fusion_type == "bilinear":
+            # Bilinear fusion
+            visual_pooled = visual_features.mean(1)
+            text_pooled = text_features.mean(1)
+            fused = self.bilinear(visual_pooled, text_pooled)
         
-        # Concatenate and fuse features
-        fused_features = torch.cat([visual_pooled, text_pooled], dim=-1)
-        fused_features = self.fusion_projection(fused_features)
-        fused_features = self.layer_norm(fused_features)
+        # Apply layer norm and dropout
+        fused = self.layer_norm(fused)
+        fused = self.dropout(fused)
         
-        return {
-            'fused_features': fused_features,
-            'visual_attended': visual_attended,
-            'text_attended': text_attended,
-            'v2t_attention': v2t_attention,
-            't2v_attention': t2v_attention
-        }
+        return fused
 
 
 class ClassificationHead(nn.Module):
     """
-    Classification head for pill recognition.
+    Classification head for pill recognition
     """
     
     def __init__(self,
                  input_dim: int = 768,
-                 hidden_dims: list = [1536, 512],
+                 hidden_dims: List[int] = [512, 256],
                  num_classes: int = 1000,
-                 dropout: float = 0.2):
+                 dropout: float = 0.3):
         super().__init__()
         
-        self.num_classes = num_classes
-        
-        # Build MLP layers
         layers = []
         prev_dim = input_dim
         
+        # Hidden layers
         for hidden_dim in hidden_dims:
             layers.extend([
                 nn.Linear(prev_dim, hidden_dim),
                 nn.GELU(),
-                nn.Dropout(dropout)
+                nn.Dropout(dropout),
+                nn.LayerNorm(hidden_dim)
             ])
             prev_dim = hidden_dim
         
-        # Final classification layer
+        # Output layer
         layers.append(nn.Linear(prev_dim, num_classes))
         
         self.classifier = nn.Sequential(*layers)
-        
+    
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass for classification.
+        Forward pass for classification
         
         Args:
-            features: Input features (B, input_dim)
+            features: [batch_size, input_dim]
             
         Returns:
-            logits: Classification logits (B, num_classes)
+            Logits: [batch_size, num_classes]
         """
         return self.classifier(features)
 
 
 class MultimodalPillTransformer(nn.Module):
     """
-    Complete multimodal transformer for pill recognition.
-    
-    This model combines visual and textual information through cross-modal attention
-    to perform accurate pharmaceutical identification.
+    Complete multimodal transformer for pill recognition
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -417,475 +406,89 @@ class MultimodalPillTransformer(nn.Module):
         
         self.config = config
         
-        # Extract configuration
-        visual_config = config.get('visual_encoder', {})
-        text_config = config.get('text_encoder', {})
-        fusion_config = config.get('fusion', {})
-        classifier_config = config.get('classifier', {})
-        
-        # Get dimensions
-        hidden_dim = fusion_config.get('hidden_dim', 768)
-        
         # Initialize encoders
+        visual_config = config["visual_encoder"]
         self.visual_encoder = VisualEncoder(
-            model_name=visual_config.get('model_name', 'google/vit-base-patch16-224'),
-            output_dim=hidden_dim,
-            pretrained=visual_config.get('pretrained', True),
-            freeze_layers=visual_config.get('freeze_layers', 0),
-            dropout=visual_config.get('dropout', 0.1)
+            model_name=visual_config["model_name"],
+            pretrained=visual_config["pretrained"],
+            freeze_backbone=visual_config.get("freeze_backbone", False),
+            output_dim=visual_config["output_dim"]
         )
         
+        text_config = config["text_encoder"]
         self.text_encoder = TextEncoder(
-            model_name=text_config.get('model_name', 'bert-base-uncased'),
-            output_dim=hidden_dim,
-            max_length=text_config.get('max_length', 128),
-            dropout=text_config.get('dropout', 0.1)
+            model_name=text_config["model_name"],
+            pretrained=text_config["pretrained"],
+            freeze_backbone=text_config.get("freeze_backbone", False),
+            output_dim=text_config["output_dim"],
+            max_length=text_config["max_length"]
         )
         
-        # Initialize fusion layer
-        self.fusion_layer = FusionLayer(
-            hidden_dim=hidden_dim,
-            num_attention_heads=fusion_config.get('num_attention_heads', 8),
-            dropout=fusion_config.get('dropout', 0.1)
+        # Initialize fusion module
+        fusion_config = config["fusion"]
+        self.feature_fusion = FeatureFusion(
+            fusion_type=fusion_config["type"],
+            hidden_dim=fusion_config.get("hidden_dim", 768),
+            num_attention_heads=fusion_config.get("num_attention_heads", 8),
+            dropout=fusion_config.get("dropout", 0.1)
         )
         
         # Initialize classification head
+        classifier_config = config["classifier"]
         self.classification_head = ClassificationHead(
-            input_dim=hidden_dim,
-            hidden_dims=classifier_config.get('hidden_dims', [1536, 512]),
-            num_classes=classifier_config.get('num_classes', 1000),
-            dropout=classifier_config.get('dropout', 0.2)
+            input_dim=fusion_config.get("hidden_dim", 768),
+            hidden_dims=classifier_config["hidden_dims"],
+            num_classes=classifier_config["num_classes"],
+            dropout=classifier_config["dropout"]
         )
         
         # Initialize weights
-        self._init_weights()
-        
-    def _init_weights(self):
-        """Initialize weights for custom layers."""
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
-                torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-                if module.bias is not None:
-                    torch.nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
-                torch.nn.init.ones_(module.weight)
-                torch.nn.init.zeros_(module.bias)
+        self.apply(self._init_weights)
+    
+    def _init_weights(self, module):
+        """Initialize weights using Xavier/Kaiming initialization"""
+        if isinstance(module, nn.Linear):
+            torch.nn.init.xavier_uniform_(module.weight)
+            if module.bias is not None:
+                torch.nn.init.constant_(module.bias, 0)
+        elif isinstance(module, nn.LayerNorm):
+            torch.nn.init.constant_(module.bias, 0)
+            torch.nn.init.constant_(module.weight, 1.0)
     
     def forward(self,
-                pixel_values: torch.Tensor,
+                images: torch.Tensor,
                 input_ids: torch.Tensor,
                 attention_mask: torch.Tensor,
-                token_type_ids: Optional[torch.Tensor] = None,
-                return_attention: bool = False) -> Dict[str, torch.Tensor]:
+                return_features: bool = False) -> Dict[str, torch.Tensor]:
         """
-        Forward pass for multimodal pill recognition.
+        Forward pass for multimodal prediction
         
         Args:
-            pixel_values: Input images (B, C, H, W)
-            input_ids: Text token IDs (B, seq_len)
-            attention_mask: Text attention mask (B, seq_len)
-            token_type_ids: Text token type IDs (B, seq_len)
-            return_attention: Whether to return attention weights
+            images: [batch_size, 3, 224, 224]
+            input_ids: [batch_size, seq_len]
+            attention_mask: [batch_size, seq_len]
+            return_features: Whether to return intermediate features
             
         Returns:
-            Dictionary containing logits, probabilities, and optionally attention weights
+            Dictionary containing logits and optionally features
         """
-        # Encode visual features
-        visual_outputs = self.visual_encoder(pixel_values)
-        visual_features = visual_outputs['sequence_output']
+        # Encode visual and text features
+        visual_features = self.visual_encoder(images)
+        text_features = self.text_encoder(input_ids, attention_mask)
         
-        # Encode text features
-        text_outputs = self.text_encoder(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids
+        # Create visual mask (all patches are valid for ViT)
+        visual_mask = torch.ones(
+            visual_features.size(0), visual_features.size(1),
+            device=visual_features.device, dtype=torch.long
         )
-        text_features = text_outputs['sequence_output']
         
-        # Fuse features through cross-modal attention
-        fusion_outputs = self.fusion_layer(
-            visual_features=visual_features,
-            text_features=text_features,
-            text_attention_mask=attention_mask
+        # Fuse features
+        fused_features = self.feature_fusion(
+            visual_features, text_features, visual_mask, attention_mask
         )
-        fused_features = fusion_outputs['fused_features']
         
         # Classification
         logits = self.classification_head(fused_features)
-        probabilities = F.softmax(logits, dim=-1)
-        
-        # Prepare output
-        outputs = {
-            'logits': logits,
-            'probabilities': probabilities,
-            'visual_features': visual_outputs['pooled_output'],
-            'text_features': text_outputs['pooled_output'],
-            'fused_features': fused_features
-        }
-        
-        # Add attention weights if requested
-        if return_attention:
-            outputs.update({
-                'v2t_attention': fusion_outputs['v2t_attention'],
-                't2v_attention': fusion_outputs['t2v_attention']
-            })
-        
-        return outputs
-    
-    def predict(self,
-                pixel_values: torch.Tensor,
-                input_ids: torch.Tensor,
-                attention_mask: torch.Tensor,
-                token_type_ids: Optional[torch.Tensor] = None,
-                top_k: int = 5) -> Dict[str, Any]:
-        """
-        Make predictions with confidence scores and top-k results.
-        
-        Args:
-            pixel_values: Input images (B, C, H, W)
-            input_ids: Text token IDs (B, seq_len)
-            attention_mask: Text attention mask (B, seq_len)
-            token_type_ids: Text token type IDs (B, seq_len)
-            top_k: Number of top predictions to return
-            
-        Returns:
-            Dictionary containing predictions, confidence scores, and top-k results
-        """
-        self.eval()
-        with torch.no_grad():
-            outputs = self.forward(
-                pixel_values=pixel_values,
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                token_type_ids=token_type_ids,
-                return_attention=True
-            )
-            
-            probabilities = outputs['probabilities']
-            
-            # Get top-k predictions
-            top_k_probs, top_k_indices = torch.topk(probabilities, k=top_k, dim=-1)
-            
-            # Get primary prediction
-            predicted_class = top_k_indices[:, 0]
-            confidence = top_k_probs[:, 0]
-            
-            return {
-                'predicted_class': predicted_class.cpu().numpy(),
-                'confidence': confidence.cpu().numpy(),
-                'top_k_predictions': {
-                    'classes': top_k_indices.cpu().numpy(),
-                    'probabilities': top_k_probs.cpu().numpy()
-                },
-                'attention_weights': {
-                    'visual_to_text': outputs['v2t_attention'].cpu().numpy(),
-                    'text_to_visual': outputs['t2v_attention'].cpu().numpy()
-                }
-            }
-    
-    def get_model_info(self) -> Dict[str, Any]:
-        """Get model information and statistics."""
-        total_params = sum(p.numel() for p in self.parameters())
-        trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        
-        return {
-            'model_name': 'MultimodalPillTransformer',
-            'total_parameters': total_params,
-            'trainable_parameters': trainable_params,
-            'visual_encoder': self.visual_encoder.model_name,
-            'text_encoder': self.text_encoder.model_name,
-            'hidden_dim': self.config.get('fusion', {}).get('hidden_dim', 768),
-            'num_classes': self.config.get('classifier', {}).get('num_classes', 1000)
-        }
-
-
-def create_model(config: Dict[str, Any]) -> MultimodalPillTransformer:
-    """
-    Factory function to create a multimodal pill transformer model.
-    
-    Args:
-        config: Model configuration dictionary
-        
-    Returns:
-        Initialized MultimodalPillTransformer model
-    """
-    return MultimodalPillTransformer(config)
-
-
-# Example usage and testing
-if __name__ == "__main__":
-    # Example configuration
-    config = {
-        'visual_encoder': {
-            'model_name': 'google/vit-base-patch16-224',
-            'pretrained': True,
-            'freeze_layers': 0,
-            'dropout': 0.1
-        },
-        'text_encoder': {
-            'model_name': 'bert-base-uncased',
-            'max_length': 128,
-            'dropout': 0.1
-        },
-        'fusion': {
-            'hidden_dim': 768,
-            'num_attention_heads': 8,
-            'dropout': 0.1
-        },
-        'classifier': {
-            'hidden_dims': [1536, 512],
-            'num_classes': 1000,
-            'dropout': 0.2
-        }
-    }
-    
-    # Create model
-    model = create_model(config)
-    
-    # Print model info
-    info = model.get_model_info()
-    print("Model Information:")
-    for key, value in info.items():
-        print(f"  {key}: {value}")
-    
-    # Test with dummy data
-    batch_size = 2
-    pixel_values = torch.randn(batch_size, 3, 224, 224)
-    input_ids = torch.randint(0, 1000, (batch_size, 128))
-    attention_mask = torch.ones(batch_size, 128)
-    
-    # Forward pass
-    outputs = model(
-        pixel_values=pixel_values,
-        input_ids=input_ids,
-        attention_mask=attention_mask,
-        return_attention=True
-    )
-    
-    print(f"\nOutput shapes:")
-    for key, value in outputs.items():
-        if isinstance(value, torch.Tensor):
-            print(f"  {key}: {value.shape}")
-    
-    # Test prediction
-    predictions = model.predict(
-        pixel_values=pixel_values,
-        input_ids=input_ids,
-        attention_mask=attention_mask,
-        top_k=5
-    )
-    
-    print(f"\nPrediction results:")
-    print(f"  Predicted classes: {predictions['predicted_class']}")
-    print(f"  Confidence scores: {predictions['confidence']}")
-        
-        self.projection = nn.Linear(text_dim, output_dim)
-        self.layer_norm = nn.LayerNorm(output_dim)
-        
-    def forward(self, text_inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
-        """
-        Args:
-            text_inputs: Dictionary with 'input_ids', 'attention_mask'
-        Returns:
-            features: (batch_size, output_dim)
-        """
-        outputs = self.model(**text_inputs)
-        # Use CLS token representation
-        features = outputs.last_hidden_state[:, 0]  # (batch_size, text_dim)
-        features = self.projection(features)  # (batch_size, output_dim)
-        features = self.layer_norm(features)
-        return features
-    
-    def tokenize(self, texts: list) -> Dict[str, torch.Tensor]:
-        """Tokenize text inputs"""
-        return self.tokenizer(
-            texts,
-            max_length=self.max_length,
-            padding=True,
-            truncation=True,
-            return_tensors="pt"
-        )
-
-
-class CrossModalAttention(nn.Module):
-    """Cross-modal attention mechanism for vision-text fusion"""
-    
-    def __init__(self, hidden_dim: int = 512, num_heads: int = 8, dropout: float = 0.1):
-        super().__init__()
-        self.hidden_dim = hidden_dim
-        self.num_heads = num_heads
-        
-        self.multihead_attn = nn.MultiheadAttention(
-            embed_dim=hidden_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
-        )
-        
-        self.norm1 = nn.LayerNorm(hidden_dim)
-        self.norm2 = nn.LayerNorm(hidden_dim)
-        
-        self.ffn = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim * 4),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim * 4, hidden_dim),
-            nn.Dropout(dropout)
-        )
-        
-    def forward(self, query: torch.Tensor, key: torch.Tensor, 
-                value: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            query: (batch_size, 1, hidden_dim)
-            key: (batch_size, 1, hidden_dim)  
-            value: (batch_size, 1, hidden_dim)
-        Returns:
-            output: (batch_size, 1, hidden_dim)
-        """
-        # Self-attention with residual connection
-        attn_output, _ = self.multihead_attn(query, key, value)
-        query = self.norm1(query + attn_output)
-        
-        # Feed-forward with residual connection
-        ffn_output = self.ffn(query)
-        output = self.norm2(query + ffn_output)
-        
-        return output
-
-
-class MultimodalFusion(nn.Module):
-    """Fusion module for combining visual and textual features"""
-    
-    def __init__(self, fusion_type: str = "cross_attention", 
-                 hidden_dim: int = 512, num_heads: int = 8, dropout: float = 0.1):
-        super().__init__()
-        self.fusion_type = fusion_type
-        
-        if fusion_type == "cross_attention":
-            self.visual_to_text_attn = CrossModalAttention(hidden_dim, num_heads, dropout)
-            self.text_to_visual_attn = CrossModalAttention(hidden_dim, num_heads, dropout)
-            
-        elif fusion_type == "concat":
-            self.fusion_layer = nn.Sequential(
-                nn.Linear(hidden_dim * 2, hidden_dim),
-                nn.GELU(),
-                nn.Dropout(dropout)
-            )
-            
-        elif fusion_type == "bilinear":
-            self.bilinear = nn.Bilinear(hidden_dim, hidden_dim, hidden_dim)
-            
-    def forward(self, visual_features: torch.Tensor, 
-                text_features: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            visual_features: (batch_size, hidden_dim)
-            text_features: (batch_size, hidden_dim)
-        Returns:
-            fused_features: (batch_size, hidden_dim)
-        """
-        if self.fusion_type == "cross_attention":
-            # Add sequence dimension for attention
-            visual_seq = visual_features.unsqueeze(1)  # (batch_size, 1, hidden_dim)
-            text_seq = text_features.unsqueeze(1)      # (batch_size, 1, hidden_dim)
-            
-            # Cross-modal attention
-            v2t = self.visual_to_text_attn(visual_seq, text_seq, text_seq)
-            t2v = self.text_to_visual_attn(text_seq, visual_seq, visual_seq)
-            
-            # Combine attended features
-            fused = (v2t + t2v).squeeze(1)  # (batch_size, hidden_dim)
-            
-        elif self.fusion_type == "concat":
-            concat_features = torch.cat([visual_features, text_features], dim=1)
-            fused = self.fusion_layer(concat_features)
-            
-        elif self.fusion_type == "bilinear":
-            fused = self.bilinear(visual_features, text_features)
-            
-        return fused
-
-
-class MultimodalPillTransformer(nn.Module):
-    """Complete multimodal transformer for pill recognition"""
-    
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__()
-        
-        # Visual encoder
-        self.visual_encoder = VisualEncoder(
-            model_name=config["visual_encoder"]["model_name"],
-            output_dim=config["visual_encoder"]["output_dim"],
-            pretrained=config["visual_encoder"]["pretrained"]
-        )
-        
-        # Text encoder
-        self.text_encoder = TextEncoder(
-            model_name=config["text_encoder"]["model_name"],
-            output_dim=config["text_encoder"]["output_dim"],
-            max_length=config["text_encoder"]["max_length"]
-        )
-        
-        # Fusion module
-        self.fusion = MultimodalFusion(
-            fusion_type=config["fusion"]["type"],
-            hidden_dim=config["fusion"]["hidden_dim"],
-            num_heads=config["fusion"]["num_attention_heads"],
-            dropout=config["fusion"]["dropout"]
-        )
-        
-        # Project to fusion hidden dimension
-        self.visual_proj = nn.Linear(
-            config["visual_encoder"]["output_dim"],
-            config["fusion"]["hidden_dim"]
-        )
-        self.text_proj = nn.Linear(
-            config["text_encoder"]["output_dim"],
-            config["fusion"]["hidden_dim"]
-        )
-        
-        # Classifier
-        classifier_layers = []
-        input_dim = config["fusion"]["hidden_dim"]
-        
-        for hidden_dim in config["classifier"]["hidden_dims"]:
-            classifier_layers.extend([
-                nn.Linear(input_dim, hidden_dim),
-                nn.GELU(),
-                nn.Dropout(config["classifier"]["dropout"])
-            ])
-            input_dim = hidden_dim
-            
-        classifier_layers.append(
-            nn.Linear(input_dim, config["classifier"]["num_classes"])
-        )
-        
-        self.classifier = nn.Sequential(*classifier_layers)
-        
-    def forward(self, images: torch.Tensor, text_inputs: Dict[str, torch.Tensor],
-                return_features: bool = False) -> Dict[str, torch.Tensor]:
-        """
-        Args:
-            images: (batch_size, 3, height, width)
-            text_inputs: Dictionary with tokenized text
-            return_features: Whether to return intermediate features
-        Returns:
-            Dictionary with logits and optionally features
-        """
-        # Encode modalities
-        visual_features = self.visual_encoder(images)
-        text_features = self.text_encoder(text_inputs)
-        
-        # Project to fusion dimension
-        visual_proj = self.visual_proj(visual_features)
-        text_proj = self.text_proj(text_features)
-        
-        # Fuse modalities
-        fused_features = self.fusion(visual_proj, text_proj)
-        
-        # Classify
-        logits = self.classifier(fused_features)
         
         outputs = {"logits": logits}
         
@@ -895,9 +498,56 @@ class MultimodalPillTransformer(nn.Module):
                 "text_features": text_features,
                 "fused_features": fused_features
             })
-            
+        
         return outputs
     
-    def get_text_tokenizer(self):
-        """Get the text tokenizer for preprocessing"""
-        return self.text_encoder.tokenizer
+    def predict(self,
+                images: torch.Tensor,
+                input_ids: torch.Tensor,
+                attention_mask: torch.Tensor,
+                return_probs: bool = True) -> Dict[str, torch.Tensor]:
+        """
+        Make predictions with probabilities
+        
+        Args:
+            images: [batch_size, 3, 224, 224]
+            input_ids: [batch_size, seq_len]
+            attention_mask: [batch_size, seq_len]
+            return_probs: Whether to return probabilities
+            
+        Returns:
+            Dictionary containing predictions and probabilities
+        """
+        self.eval()
+        with torch.no_grad():
+            outputs = self.forward(images, input_ids, attention_mask)
+            logits = outputs["logits"]
+            
+            if return_probs:
+                probs = F.softmax(logits, dim=-1)
+                predictions = torch.argmax(probs, dim=-1)
+                confidence = torch.max(probs, dim=-1)[0]
+                
+                return {
+                    "predictions": predictions,
+                    "probabilities": probs,
+                    "confidence": confidence,
+                    "logits": logits
+                }
+            else:
+                predictions = torch.argmax(logits, dim=-1)
+                return {
+                    "predictions": predictions,
+                    "logits": logits
+                }
+    
+    def get_attention_weights(self,
+                             images: torch.Tensor,
+                             input_ids: torch.Tensor,
+                             attention_mask: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Extract attention weights for visualization
+        """
+        # This would require modifying the forward pass to return attention weights
+        # Implementation depends on specific visualization needs
+        pass

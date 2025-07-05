@@ -52,6 +52,17 @@ def load_checkpoint(filepath, model, optimizer=None, scheduler=None, device='cpu
     return epoch, best_acc
 
 
+def get_device():
+    """Get the best available device"""
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        logger.info(f"Using GPU: {torch.cuda.get_device_name()}")
+    else:
+        device = torch.device("cpu")
+        logger.info("Using CPU")
+    return device
+
+
 def count_parameters(model):
     """Count total and trainable parameters"""
     total_params = sum(p.numel() for p in model.parameters())
@@ -63,65 +74,91 @@ def count_parameters(model):
     return total_params, trainable_params
 
 
-def get_device():
-    """Get the best available device"""
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        logger.info(f"Using GPU: {torch.cuda.get_device_name()}")
-    else:
-        device = torch.device("cpu")
-        logger.info("Using CPU")
-    
-    return device
+def create_directories(paths):
+    """Create directories if they don't exist"""
+    for path in paths:
+        os.makedirs(path, exist_ok=True)
+        logger.info(f"Directory created/verified: {path}")
 
 
-class AverageMeter:
-    """Computes and stores the average and current value"""
+def setup_logging(config: Dict[str, Any]):
+    """Setup logging configuration"""
+    log_config = config.get("logging", {})
+    log_level = log_config.get("level", "INFO")
+    log_dir = log_config.get("log_dir", "./logs")
     
-    def __init__(self):
-        self.reset()
+    # Create log directory
+    os.makedirs(log_dir, exist_ok=True)
     
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
+    # Configure logger
+    logger.remove()  # Remove default handler
+    logger.add(
+        os.path.join(log_dir, "app.log"),
+        rotation="10 MB",
+        retention="7 days",
+        level=log_level,
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}"
+    )
+    logger.add(
+        lambda msg: print(msg, end=""),
+        level=log_level,
+        format="<green>{time:HH:mm:ss}</green> | <level>{level}</level> | {message}"
+    )
     
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
+    logger.info("Logging setup completed")
 
 
-def format_time(seconds):
-    """Format time in seconds to human readable format"""
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    seconds = seconds % 60
+class EarlyStopping:
+    """Early stopping implementation"""
     
-    if hours > 0:
-        return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
-    elif minutes > 0:
-        return f"{int(minutes)}m {int(seconds)}s"
-    else:
-        return f"{int(seconds)}s"
+    def __init__(self, patience: int = 10, min_delta: float = 0.001, mode: str = 'max'):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+        self.best_score = None
+        self.counter = 0
+        self.should_stop = False
+    
+    def __call__(self, score: float) -> bool:
+        if self.best_score is None:
+            self.best_score = score
+        elif self._is_better(score):
+            self.best_score = score
+            self.counter = 0
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.should_stop = True
+        
+        return self.should_stop
+    
+    def _is_better(self, score: float) -> bool:
+        if self.mode == 'max':
+            return score > self.best_score + self.min_delta
+        else:
+            return score < self.best_score - self.min_delta
 
 
-def create_directory_structure():
-    """Create necessary directories for the project"""
-    directories = [
-        "data/raw",
-        "data/processed",
-        "checkpoints",
-        "logs",
-        "results",
-        "notebooks"
-    ]
+def freeze_layers(model, layer_names):
+    """Freeze specific layers in the model"""
+    frozen_count = 0
+    for name, param in model.named_parameters():
+        if any(layer_name in name for layer_name in layer_names):
+            param.requires_grad = False
+            frozen_count += 1
     
-    for directory in directories:
-        os.makedirs(directory, exist_ok=True)
-        logger.info(f"Created directory: {directory}")
+    logger.info(f"Frozen {frozen_count} parameters")
+
+
+def unfreeze_layers(model, layer_names):
+    """Unfreeze specific layers in the model"""
+    unfrozen_count = 0
+    for name, param in model.named_parameters():
+        if any(layer_name in name for layer_name in layer_names):
+            param.requires_grad = True
+            unfrozen_count += 1
+    
+    logger.info(f"Unfrozen {unfrozen_count} parameters")
 
 
 def get_model_size(model):
@@ -135,5 +172,24 @@ def get_model_size(model):
     for buffer in model.buffers():
         buffer_size += buffer.nelement() * buffer.element_size()
     
-    size_mb = (param_size + buffer_size) / 1024**2
+    size_mb = (param_size + buffer_size) / 1024 / 1024
+    logger.info(f"Model size: {size_mb:.2f} MB")
+    
     return size_mb
+
+
+def warmup_learning_rate(optimizer, current_step, warmup_steps, base_lr):
+    """Apply learning rate warmup"""
+    if current_step < warmup_steps:
+        lr = base_lr * (current_step + 1) / warmup_steps
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
+    return optimizer.param_groups[0]['lr']
+
+
+def cosine_annealing_lr(optimizer, current_epoch, max_epochs, base_lr, min_lr=0):
+    """Apply cosine annealing learning rate schedule"""
+    lr = min_lr + (base_lr - min_lr) * (1 + np.cos(np.pi * current_epoch / max_epochs)) / 2
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+    return lr

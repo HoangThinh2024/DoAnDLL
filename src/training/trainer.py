@@ -51,156 +51,134 @@ class MultimodalTrainer:
             num_classes=config["model"]["classifier"]["num_classes"]
         )
         
-        # Mixed precision training
-        self.use_amp = config.get("training", {}).get("use_amp", True) and self.device.type == "cuda"
-        self.scaler = GradScaler() if self.use_amp else None
+        # Initialize mixed precision scaler
+        self.use_amp = config.get("training", {}).get("use_amp", True)
+        if self.use_amp:
+            self.scaler = GradScaler()
         
-        # Early stopping
+        # Initialize metrics tracking
+        self.train_metrics = defaultdict(list)
+        self.val_metrics = defaultdict(list)
+        self.best_val_acc = 0.0
+        self.current_epoch = 0
+        
+        # Initialize early stopping
+        early_stop_config = config.get("training", {})
         self.early_stopping = EarlyStopping(
-            patience=config["training"]["early_stopping"]["patience"],
-            min_delta=config["training"]["early_stopping"]["min_delta"]
+            patience=early_stop_config.get("patience", 10),
+            min_delta=early_stop_config.get("min_delta", 0.001),
+            monitor='val_accuracy'
         )
         
-        # Training state
-        self.current_epoch = 0
-        self.best_val_acc = 0.0
-        self.global_step = 0
-        self.train_losses = []
-        self.val_losses = []
+        # Setup checkpointing
+        self.checkpoint_dir = Path(config.get("logging", {}).get("checkpoint_dir", "./checkpoints"))
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
-        # Experiment tracking
-        self.use_wandb = config.get("logging", {}).get("use_wandb", False)
-        if self.use_wandb:
-            self._setup_wandb()
+        # Initialize Weights & Biases if configured
+        wandb_config = config.get("logging", {}).get("wandb", {})
+        if wandb_config.get("enabled", False):
+            wandb.init(
+                project=wandb_config.get("project", "pill-recognition"),
+                entity=wandb_config.get("entity", None),
+                config=config,
+                name=wandb_config.get("run_name", None)
+            )
+            self.use_wandb = True
+        else:
+            self.use_wandb = False
+        
+        # Resume from checkpoint if specified
+        if resume_from:
+            self._load_checkpoint(resume_from)
+        
+        logger.info("Trainer initialized successfully")
     
-    def _create_model(self) -> nn.Module:
-        """Create and initialize the model"""
+    def _create_model(self):
+        """Create and initialize model"""
         model = MultimodalPillTransformer(self.config["model"])
         
-        # Multi-GPU support
         if self.multi_gpu:
             model = nn.DataParallel(model)
         
-        model = model.to(self.device)
-        
-        total_params = sum(p.numel() for p in model.parameters())
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        
-        logger.info(f"Model created with {total_params:,} total parameters")
-        logger.info(f"Trainable parameters: {trainable_params:,}")
-        
+        model.to(self.device)
         return model
     
     def _setup_optimizer_and_scheduler(self):
         """Setup optimizer and learning rate scheduler"""
-        
-        # Get model parameters (handle DataParallel)
-        model_params = self.model.module.parameters() if self.multi_gpu else self.model.parameters()
+        training_config = self.config["training"]
         
         # Optimizer
-        optimizer_config = self.config["training"]["optimizer"]
-        if optimizer_config["name"].lower() == "adamw":
+        optimizer_name = training_config.get("optimizer", "adamw").lower()
+        lr = training_config["learning_rate"]
+        weight_decay = training_config.get("weight_decay", 0.01)
+        
+        if optimizer_name == "adamw":
             self.optimizer = optim.AdamW(
-                model_params,
-                lr=optimizer_config["learning_rate"],
-                weight_decay=optimizer_config["weight_decay"],
-                betas=optimizer_config.get("betas", (0.9, 0.999))
+                self.model.parameters(),
+                lr=lr,
+                weight_decay=weight_decay,
+                betas=(0.9, 0.999),
+                eps=1e-8
             )
-        elif optimizer_config["name"].lower() == "adam":
+        elif optimizer_name == "adam":
             self.optimizer = optim.Adam(
-                model_params,
-                lr=optimizer_config["learning_rate"],
-                weight_decay=optimizer_config["weight_decay"]
+                self.model.parameters(),
+                lr=lr,
+                weight_decay=weight_decay
+            )
+        elif optimizer_name == "sgd":
+            self.optimizer = optim.SGD(
+                self.model.parameters(),
+                lr=lr,
+                weight_decay=weight_decay,
+                momentum=0.9
             )
         else:
-            raise ValueError(f"Unsupported optimizer: {optimizer_config['name']}")
+            raise ValueError(f"Unknown optimizer: {optimizer_name}")
         
         # Scheduler
-        scheduler_config = self.config["training"]["scheduler"]
-        if scheduler_config["name"] == "cosine_annealing":
+        scheduler_name = training_config.get("scheduler", "cosine_annealing").lower()
+        num_epochs = training_config["num_epochs"]
+        
+        if scheduler_name == "cosine_annealing":
             self.scheduler = CosineAnnealingLR(
                 self.optimizer,
-                T_max=self.config["training"]["num_epochs"],
-                eta_min=scheduler_config.get("eta_min", 1e-7)
+                T_max=num_epochs,
+                eta_min=lr * 0.01
             )
-        elif scheduler_config["name"] == "onecycle":
-            total_steps = self.config["training"]["num_epochs"] * scheduler_config.get("steps_per_epoch", 100)
-            self.scheduler = OneCycleLR(
-                self.optimizer,
-                max_lr=optimizer_config["learning_rate"],
-                total_steps=total_steps,
-                pct_start=scheduler_config.get("pct_start", 0.3)
-            )
-        elif scheduler_config["name"] == "step":
+        elif scheduler_name == "step":
             self.scheduler = StepLR(
                 self.optimizer,
-                step_size=scheduler_config.get("step_size", 10),
-                gamma=scheduler_config.get("gamma", 0.1)
+                step_size=num_epochs // 3,
+                gamma=0.1
+            )
+        elif scheduler_name == "onecycle":
+            self.scheduler = OneCycleLR(
+                self.optimizer,
+                max_lr=lr,
+                epochs=num_epochs,
+                steps_per_epoch=100  # Will be updated with actual value
             )
         else:
             self.scheduler = None
-            
-        logger.info(f"Optimizer: {optimizer_config['name']}, Scheduler: {scheduler_config.get('name', 'None')}")
+        
+        logger.info(f"Optimizer: {optimizer_name}, Scheduler: {scheduler_name}")
     
-    def _setup_wandb(self):
-        """Setup Weights & Biases logging"""
-        wandb_config = self.config["logging"]["wandb"]
-        
-        wandb.init(
-            project=wandb_config["project"],
-            entity=wandb_config.get("entity"),
-            name=wandb_config.get("run_name", f"multimodal_pill_{int(time.time())}"),
-            config=self.config,
-            tags=wandb_config.get("tags", [])
-        )
-        
-        # Watch model
-        wandb.watch(self.model, log="all", log_freq=wandb_config.get("log_freq", 100))
-        
-    def _resume_training(self, checkpoint_path: str):
-        """Resume training from checkpoint"""
-        logger.info(f"Resuming training from {checkpoint_path}")
-        
-        checkpoint = load_checkpoint(checkpoint_path, self.model, self.optimizer, self.scheduler)
-        
-        self.current_epoch = checkpoint["epoch"]
-        self.best_val_acc = checkpoint["best_val_acc"]
-        self.global_step = checkpoint["global_step"]
-        
-        logger.info(f"Resumed from epoch {self.current_epoch}, best val acc: {self.best_val_acc:.4f}")
-    
-    
-    def train_epoch(self, dataloader) -> Dict[str, float]:
+    def train_epoch(self, train_loader):
         """Train for one epoch"""
         self.model.train()
+        epoch_loss = 0.0
+        epoch_acc = 0.0
+        num_batches = len(train_loader)
         
-        running_loss = 0.0
-        all_predictions = []
-        all_labels = []
+        progress_bar = tqdm(train_loader, desc=f"Training Epoch {self.current_epoch + 1}")
         
-        # Get tokenizer from model
-        tokenizer = self.model.get_text_tokenizer() if not self.multi_gpu else self.model.module.get_text_tokenizer()
-        
-        pbar = tqdm(dataloader, desc=f"Training Epoch {self.current_epoch + 1}")
-        
-        for batch_idx, batch in enumerate(pbar):
+        for batch_idx, batch in enumerate(progress_bar):
             # Move data to device
-            images = batch['images'].to(self.device, non_blocking=True)
-            texts = batch['texts']
-            labels = batch['labels'].to(self.device, non_blocking=True)
-            
-            # Tokenize texts
-            text_inputs = tokenizer(
-                texts,
-                max_length=self.config["model"]["text_encoder"]["max_length"],
-                padding=True,
-                truncation=True,
-                return_tensors="pt"
-            )
-            
-            # Move text inputs to device
-            for key in text_inputs:
-                text_inputs[key] = text_inputs[key].to(self.device, non_blocking=True)
+            images = batch['image'].to(self.device)
+            input_ids = batch['input_ids'].to(self.device)
+            attention_mask = batch['attention_mask'].to(self.device)
+            labels = batch['label'].to(self.device)
             
             # Zero gradients
             self.optimizer.zero_grad()
@@ -208,390 +186,300 @@ class MultimodalTrainer:
             # Forward pass with mixed precision
             if self.use_amp:
                 with autocast():
-                    outputs = self.model(images, text_inputs)
-                    loss = nn.CrossEntropyLoss()(outputs, labels)
+                    outputs = self.model(images, input_ids, attention_mask)
+                    loss = F.cross_entropy(outputs['logits'], labels)
                 
                 # Backward pass
                 self.scaler.scale(loss).backward()
                 
                 # Gradient clipping
-                if self.config["training"].get("gradient_clip_norm"):
+                if self.config.get("training", {}).get("gradient_clip_norm"):
                     self.scaler.unscale_(self.optimizer)
                     nn.utils.clip_grad_norm_(
-                        self.model.parameters(), 
+                        self.model.parameters(),
                         self.config["training"]["gradient_clip_norm"]
                     )
                 
-                # Optimizer step
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
             else:
-                outputs = self.model(images, text_inputs)
-                loss = nn.CrossEntropyLoss()(outputs, labels)
+                outputs = self.model(images, input_ids, attention_mask)
+                loss = F.cross_entropy(outputs['logits'], labels)
                 
-                # Backward pass
                 loss.backward()
                 
                 # Gradient clipping
-                if self.config["training"].get("gradient_clip_norm"):
+                if self.config.get("training", {}).get("gradient_clip_norm"):
                     nn.utils.clip_grad_norm_(
-                        self.model.parameters(), 
+                        self.model.parameters(),
                         self.config["training"]["gradient_clip_norm"]
                     )
                 
-                # Optimizer step
                 self.optimizer.step()
             
-            # Update scheduler (if OneCycle)
-            if self.scheduler and isinstance(self.scheduler, OneCycleLR):
-                self.scheduler.step()
+            # Calculate accuracy
+            predictions = torch.argmax(outputs['logits'], dim=-1)
+            accuracy = (predictions == labels).float().mean()
             
             # Update metrics
-            running_loss += loss.item()
-            predictions = torch.argmax(outputs, dim=1)
-            all_predictions.extend(predictions.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
+            epoch_loss += loss.item()
+            epoch_acc += accuracy.item()
             
             # Update progress bar
-            pbar.set_postfix({
+            progress_bar.set_postfix({
                 'Loss': f'{loss.item():.4f}',
-                'Avg Loss': f'{running_loss / (batch_idx + 1):.4f}',
-                'LR': f'{self.optimizer.param_groups[0]["lr"]:.2e}'
+                'Acc': f'{accuracy.item():.4f}',
+                'LR': f'{self.optimizer.param_groups[0]["lr"]:.6f}'
             })
             
-            # Wandb logging
-            if self.use_wandb and self.global_step % self.config["logging"]["log_interval"] == 0:
+            # Log to wandb
+            if self.use_wandb and batch_idx % 100 == 0:
                 wandb.log({
-                    'train/loss': loss.item(),
-                    'train/learning_rate': self.optimizer.param_groups[0]['lr'],
-                    'global_step': self.global_step
+                    'train_batch_loss': loss.item(),
+                    'train_batch_acc': accuracy.item(),
+                    'learning_rate': self.optimizer.param_groups[0]['lr'],
+                    'epoch': self.current_epoch
                 })
-            
-            self.global_step += 1
         
-        # Calculate epoch metrics
-        epoch_loss = running_loss / len(dataloader)
-        epoch_acc = np.mean(np.array(all_predictions) == np.array(all_labels))
+        # Calculate average metrics
+        avg_loss = epoch_loss / num_batches
+        avg_acc = epoch_acc / num_batches
         
-        # Update scheduler (if not OneCycle)
-        if self.scheduler and not isinstance(self.scheduler, OneCycleLR):
-            self.scheduler.step()
+        # Store metrics
+        self.train_metrics['loss'].append(avg_loss)
+        self.train_metrics['accuracy'].append(avg_acc)
         
-        return {
-            'loss': epoch_loss,
-            'accuracy': epoch_acc
-        }
+        return avg_loss, avg_acc
     
-    def validate_epoch(self, dataloader) -> Dict[str, float]:
+    def validate_epoch(self, val_loader):
         """Validate for one epoch"""
         self.model.eval()
-        
-        running_loss = 0.0
+        epoch_loss = 0.0
         all_predictions = []
         all_labels = []
         all_probabilities = []
         
-        # Get tokenizer from model
-        tokenizer = self.model.get_text_tokenizer() if not self.multi_gpu else self.model.module.get_text_tokenizer()
+        progress_bar = tqdm(val_loader, desc=f"Validation Epoch {self.current_epoch + 1}")
         
         with torch.no_grad():
-            pbar = tqdm(dataloader, desc=f"Validation Epoch {self.current_epoch + 1}")
-            
-            for batch_idx, batch in enumerate(pbar):
+            for batch in progress_bar:
                 # Move data to device
-                images = batch['images'].to(self.device, non_blocking=True)
-                texts = batch['texts']
-                labels = batch['labels'].to(self.device, non_blocking=True)
-                
-                # Tokenize texts
-                text_inputs = tokenizer(
-                    texts,
-                    max_length=self.config["model"]["text_encoder"]["max_length"],
-                    padding=True,
-                    truncation=True,
-                    return_tensors="pt"
-                )
-                
-                # Move text inputs to device
-                for key in text_inputs:
-                    text_inputs[key] = text_inputs[key].to(self.device, non_blocking=True)
+                images = batch['image'].to(self.device)
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['label'].to(self.device)
                 
                 # Forward pass
                 if self.use_amp:
                     with autocast():
-                        outputs = self.model(images, text_inputs)
-                        loss = nn.CrossEntropyLoss()(outputs, labels)
+                        outputs = self.model(images, input_ids, attention_mask)
+                        loss = F.cross_entropy(outputs['logits'], labels)
                 else:
-                    outputs = self.model(images, text_inputs)
-                    loss = nn.CrossEntropyLoss()(outputs, labels)
+                    outputs = self.model(images, input_ids, attention_mask)
+                    loss = F.cross_entropy(outputs['logits'], labels)
                 
-                # Update metrics
-                running_loss += loss.item()
-                probabilities = torch.softmax(outputs, dim=1)
-                predictions = torch.argmax(outputs, dim=1)
+                # Get predictions and probabilities
+                probabilities = F.softmax(outputs['logits'], dim=-1)
+                predictions = torch.argmax(probabilities, dim=-1)
                 
+                # Store for metrics calculation
                 all_predictions.extend(predictions.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
                 all_probabilities.extend(probabilities.cpu().numpy())
                 
-                # Update progress bar
-                pbar.set_postfix({
-                    'Loss': f'{loss.item():.4f}',
-                    'Avg Loss': f'{running_loss / (batch_idx + 1):.4f}'
-                })
+                epoch_loss += loss.item()
         
-        # Calculate epoch metrics
-        epoch_loss = running_loss / len(dataloader)
+        # Calculate comprehensive metrics
+        avg_loss = epoch_loss / len(val_loader)
+        metrics = self.metrics_calculator.calculate_metrics(all_labels, all_predictions)
         
-        # Calculate detailed metrics
-        metrics = self.metrics_calculator.calculate_metrics(
-            all_labels, all_predictions, all_probabilities
+        # Calculate top-k accuracy
+        top5_acc = self.metrics_calculator.calculate_top_k_accuracy(
+            all_labels, np.array(all_probabilities), k=5
         )
+        metrics['top5_accuracy'] = top5_acc
         
-        return {
-            'loss': epoch_loss,
-            **metrics
-        }
+        # Store metrics
+        self.val_metrics['loss'].append(avg_loss)
+        for key, value in metrics.items():
+            self.val_metrics[key].append(value)
+        
+        return avg_loss, metrics
     
-    def train(self, train_dataloader, val_dataloader, test_dataloader=None):
-        """Main training loop"""
-        logger.info("Starting training...")
+    def train(self, train_loader, val_loader, num_epochs: Optional[int] = None):
+        """Complete training loop"""
+        if num_epochs is None:
+            num_epochs = self.config["training"]["num_epochs"]
         
+        logger.info(f"Starting training for {num_epochs} epochs")
         start_time = time.time()
         
-        for epoch in range(self.current_epoch, self.config["training"]["num_epochs"]):
+        for epoch in range(self.current_epoch, num_epochs):
             self.current_epoch = epoch
             
             # Training phase
-            train_metrics = self.train_epoch(train_dataloader)
-            self.train_losses.append(train_metrics['loss'])
+            train_loss, train_acc = self.train_epoch(train_loader)
             
             # Validation phase
-            val_metrics = self.validate_epoch(val_dataloader)
-            self.val_losses.append(val_metrics['loss'])
+            val_loss, val_metrics = self.validate_epoch(val_loader)
+            val_acc = val_metrics['accuracy']
             
-            # Logging
-            logger.info(f"Epoch {epoch + 1}/{self.config['training']['num_epochs']}")
-            logger.info(f"Train Loss: {train_metrics['loss']:.4f}, Train Acc: {train_metrics['accuracy']:.4f}")
-            logger.info(f"Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.4f}")
+            # Update learning rate
+            if self.scheduler:
+                if isinstance(self.scheduler, OneCycleLR):
+                    # OneCycleLR is updated per batch, not per epoch
+                    pass
+                else:
+                    self.scheduler.step()
             
-            # Wandb logging
+            # Log epoch results
+            logger.info(
+                f"Epoch {epoch + 1}/{num_epochs} - "
+                f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, "
+                f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, "
+                f"Top-5 Acc: {val_metrics['top5_accuracy']:.4f}"
+            )
+            
+            # Log to wandb
             if self.use_wandb:
-                wandb.log({
+                log_dict = {
                     'epoch': epoch + 1,
-                    'train/epoch_loss': train_metrics['loss'],
-                    'train/epoch_accuracy': train_metrics['accuracy'],
-                    'val/epoch_loss': val_metrics['loss'],
-                    'val/epoch_accuracy': val_metrics['accuracy'],
-                    'val/f1_score': val_metrics.get('f1_score', 0),
-                    'val/precision': val_metrics.get('precision', 0),
-                    'val/recall': val_metrics.get('recall', 0)
-                })
+                    'train_loss': train_loss,
+                    'train_accuracy': train_acc,
+                    'val_loss': val_loss,
+                }
+                log_dict.update({f'val_{k}': v for k, v in val_metrics.items()})
+                wandb.log(log_dict)
             
-            # Save checkpoint
-            is_best = val_metrics['accuracy'] > self.best_val_acc
-            if is_best:
-                self.best_val_acc = val_metrics['accuracy']
-                logger.info(f"New best validation accuracy: {self.best_val_acc:.4f}")
+            # Save checkpoint if best model
+            if val_acc > self.best_val_acc:
+                self.best_val_acc = val_acc
+                self._save_checkpoint(epoch, is_best=True)
+                logger.info(f"New best model saved with validation accuracy: {val_acc:.4f}")
             
-            # Save checkpoint
-            checkpoint_path = self._save_checkpoint(is_best, val_metrics)
+            # Regular checkpoint saving
+            if (epoch + 1) % self.config.get("training", {}).get("save_every", 10) == 0:
+                self._save_checkpoint(epoch, is_best=False)
             
-            # Early stopping
-            if self.early_stopping(val_metrics['loss']):
+            # Early stopping check
+            if self.early_stopping(val_acc):
                 logger.info(f"Early stopping triggered at epoch {epoch + 1}")
                 break
         
-        # Final evaluation on test set
-        if test_dataloader:
-            logger.info("Evaluating on test set...")
-            # Load best model
-            best_checkpoint = os.path.join(
-                self.config["training"]["checkpoint_dir"], 
-                "best_model.pth"
-            )
-            if os.path.exists(best_checkpoint):
-                self._load_checkpoint(best_checkpoint)
-            
-            test_metrics = self.validate_epoch(test_dataloader)
-            logger.info(f"Test Accuracy: {test_metrics['accuracy']:.4f}")
-            logger.info(f"Test F1 Score: {test_metrics.get('f1_score', 0):.4f}")
-            
-            if self.use_wandb:
-                wandb.log({
-                    'test/accuracy': test_metrics['accuracy'],
-                    'test/f1_score': test_metrics.get('f1_score', 0),
-                    'test/precision': test_metrics.get('precision', 0),
-                    'test/recall': test_metrics.get('recall', 0)
-                })
-        
         total_time = time.time() - start_time
-        logger.info(f"Training completed in {total_time / 3600:.2f} hours")
+        logger.info(f"Training completed in {total_time:.2f} seconds")
         
-        if self.use_wandb:
-            wandb.finish()
+        # Final evaluation
+        self._final_evaluation(val_loader)
     
-    def _save_checkpoint(self, is_best: bool, metrics: Dict[str, float]) -> str:
+    def _save_checkpoint(self, epoch: int, is_best: bool = False):
         """Save model checkpoint"""
-        checkpoint_dir = Path(self.config["training"]["checkpoint_dir"])
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Model state (handle DataParallel)
         model_state = self.model.module.state_dict() if self.multi_gpu else self.model.state_dict()
         
         checkpoint = {
-            'epoch': self.current_epoch + 1,
+            'epoch': epoch,
             'model_state_dict': model_state,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
             'best_val_acc': self.best_val_acc,
-            'global_step': self.global_step,
-            'config': self.config,
-            'metrics': metrics
+            'train_metrics': dict(self.train_metrics),
+            'val_metrics': dict(self.val_metrics),
+            'config': self.config
         }
         
-        # Save latest checkpoint
-        latest_path = checkpoint_dir / "latest_checkpoint.pth"
-        torch.save(checkpoint, latest_path)
-        
-        # Save best checkpoint
         if is_best:
-            best_path = checkpoint_dir / "best_model.pth"
-            torch.save(checkpoint, best_path)
-            logger.info(f"Best model saved to {best_path}")
+            filepath = self.checkpoint_dir / "best_model.pth"
+        else:
+            filepath = self.checkpoint_dir / f"checkpoint_epoch_{epoch + 1}.pth"
         
-        # Save epoch checkpoint
-        epoch_path = checkpoint_dir / f"checkpoint_epoch_{self.current_epoch + 1}.pth"
-        torch.save(checkpoint, epoch_path)
-        
-        return str(latest_path)
+        torch.save(checkpoint, filepath)
+        logger.info(f"Checkpoint saved: {filepath}")
     
     def _load_checkpoint(self, checkpoint_path: str):
-        """Load model checkpoint"""
-        logger.info(f"Loading checkpoint from {checkpoint_path}")
-        
+        """Load checkpoint for resuming training"""
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         
-        # Load model state (handle DataParallel)
+        # Load model state
         if self.multi_gpu:
             self.model.module.load_state_dict(checkpoint['model_state_dict'])
         else:
             self.model.load_state_dict(checkpoint['model_state_dict'])
         
-        # Load optimizer and scheduler
+        # Load optimizer state
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if self.scheduler and checkpoint['scheduler_state_dict']:
+        
+        # Load scheduler state
+        if self.scheduler and checkpoint.get('scheduler_state_dict'):
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         
         # Load training state
-        self.current_epoch = checkpoint['epoch']
+        self.current_epoch = checkpoint['epoch'] + 1
         self.best_val_acc = checkpoint['best_val_acc']
-        self.global_step = checkpoint['global_step']
+        self.train_metrics = defaultdict(list, checkpoint.get('train_metrics', {}))
+        self.val_metrics = defaultdict(list, checkpoint.get('val_metrics', {}))
         
-        logger.info(f"Checkpoint loaded: epoch {self.current_epoch}, best val acc: {self.best_val_acc:.4f}")
+        logger.info(f"Resumed training from epoch {self.current_epoch}")
     
-    def predict(self, dataloader) -> Tuple[List[int], List[float]]:
-        """Make predictions on a dataset"""
-        self.model.eval()
+    def _final_evaluation(self, val_loader):
+        """Perform final comprehensive evaluation"""
+        logger.info("Performing final evaluation...")
         
-        all_predictions = []
-        all_probabilities = []
+        # Load best model
+        best_model_path = self.checkpoint_dir / "best_model.pth"
+        if best_model_path.exists():
+            checkpoint = torch.load(best_model_path, map_location=self.device)
+            if self.multi_gpu:
+                self.model.module.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                self.model.load_state_dict(checkpoint['model_state_dict'])
         
-        # Get tokenizer from model
-        tokenizer = self.model.get_text_tokenizer() if not self.multi_gpu else self.model.module.get_text_tokenizer()
+        # Detailed evaluation
+        val_loss, val_metrics = self.validate_epoch(val_loader)
         
-        with torch.no_grad():
-            for batch in tqdm(dataloader, desc="Predicting"):
-                # Move data to device
-                images = batch['images'].to(self.device, non_blocking=True)
-                texts = batch['texts']
-                
-                # Tokenize texts
-                text_inputs = tokenizer(
-                    texts,
-                    max_length=self.config["model"]["text_encoder"]["max_length"],
-                    padding=True,
-                    truncation=True,
-                    return_tensors="pt"
-                )
-                
-                # Move text inputs to device
-                for key in text_inputs:
-                    text_inputs[key] = text_inputs[key].to(self.device, non_blocking=True)
-                
-                # Forward pass
-                if self.use_amp:
-                    with autocast():
-                        outputs = self.model(images, text_inputs)
-                else:
-                    outputs = self.model(images, text_inputs)
-                
-                # Get predictions and probabilities
-                probabilities = torch.softmax(outputs, dim=1)
-                predictions = torch.argmax(outputs, dim=1)
-                
-                all_predictions.extend(predictions.cpu().numpy())
-                all_probabilities.extend(probabilities.cpu().numpy())
+        # Generate and save detailed report
+        self._save_evaluation_report(val_metrics)
         
-        return all_predictions, all_probabilities
+        logger.info("Final evaluation completed")
+    
+    def _save_evaluation_report(self, metrics):
+        """Save detailed evaluation report"""
+        report = {
+            'best_validation_accuracy': self.best_val_acc,
+            'final_metrics': metrics,
+            'training_history': {
+                'train_metrics': dict(self.train_metrics),
+                'val_metrics': dict(self.val_metrics)
+            },
+            'config': self.config
+        }
+        
+        report_path = self.checkpoint_dir / "evaluation_report.json"
+        with open(report_path, 'w') as f:
+            json.dump(report, f, indent=2, default=str)
+        
+        logger.info(f"Evaluation report saved: {report_path}")
 
 
-def train_model(config_path: str, resume_from: Optional[str] = None):
-    """Main training function"""
-    # Load configuration
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+class EarlyStopping:
+    """Early stopping utility"""
     
-    # Setup data processing
-    spark_processor = SparkDataProcessor(config)
+    def __init__(self, patience: int = 10, min_delta: float = 0.001, monitor: str = 'val_accuracy'):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.monitor = monitor
+        self.best_score = None
+        self.counter = 0
+        self.should_stop = False
     
-    # Create sample dataset if it doesn't exist
-    processed_data_path = config["data"]["processed_data_path"]
-    if not os.path.exists(processed_data_path):
-        logger.info("Creating sample dataset...")
-        raw_data_path = config["data"]["raw_data_path"]
-        os.makedirs(raw_data_path, exist_ok=True)
+    def __call__(self, score: float) -> bool:
+        if self.best_score is None:
+            self.best_score = score
+        elif score < self.best_score + self.min_delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.should_stop = True
+        else:
+            self.best_score = score
+            self.counter = 0
         
-        # Create sample data
-        sample_df = spark_processor.create_sample_dataset(
-            output_path=os.path.join(raw_data_path, "sample_data"),
-            num_samples=config["data"]["sample_size"]
-        )
-        
-        # Process data
-        df_processed = spark_processor.preprocess_images(sample_df)
-        df_cleaned = spark_processor.clean_text_data(df_processed)
-        
-        # Split data
-        train_df, val_df, test_df = spark_processor.create_train_val_test_split(df_cleaned)
-        
-        # Save processed data
-        spark_processor.save_processed_data(train_df, val_df, test_df, processed_data_path)
-        
-        # Close Spark session
-        spark_processor.close()
-    
-    # Create dataloaders
-    dataloaders = create_dataloaders(processed_data_path, config)
-    
-    # Initialize trainer
-    trainer = MultimodalTrainer(config, resume_from)
-    
-    # Start training
-    trainer.train(
-        train_dataloader=dataloaders['train'],
-        val_dataloader=dataloaders['val'],
-        test_dataloader=dataloaders['test']
-    )
-
-
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Train Multimodal Pill Recognition Model")
-    parser.add_argument("--config", type=str, required=True, help="Path to config file")
-    parser.add_argument("--resume", type=str, help="Path to checkpoint to resume from")
-    
-    args = parser.parse_args()
-    
-    train_model(args.config, args.resume)
+        return self.should_stop
