@@ -2122,21 +2122,6 @@ For making beautiful web apps accessible
 
 ---
 
-### 🏆 **Contributors**
-
-<div align="center">
-
-#### 👥 **Project Development Team**
-
-*We thank all contributors who have helped make this project possible*
-
-<!-- This section will be automatically updated -->
-[![Contributors](https://contrib.rocks/image?repo=username/DoAnDLL)](https://github.com/username/DoAnDLL/graphs/contributors)
-
-</div>
-
----
-
 ### 📚 **Educational Institutions**
 
 <table>
