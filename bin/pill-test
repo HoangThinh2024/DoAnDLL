@@ -1,0 +1,4 @@
+#!/bin/bash
+# pill-test - Convenience script for Smart Pill Recognition
+cd "$(dirname "$0")/.."
+./bin/test "$@"

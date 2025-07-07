@@ -1,0 +1,139 @@
+# Smart Pill Recognition System - .gitignore
+
+# ================================
+# 🐍 Python
+# ================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ================================
+# 🧠 Machine Learning
+# ================================
+*.pth
+*.pt
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.joblib
+*.model
+checkpoints/
+models/weights/
+wandb/
+mlruns/
+
+# ================================
+# 📊 Data Files
+# ================================
+*.csv
+*.tsv
+*.json
+*.jsonl
+*.parquet
+*.feather
+data/raw/
+data/processed/
+Dataset_BigData/CURE_dataset_train_cut_bounding_box/
+Dataset_BigData/CURE_dataset_validation_cut_bounding_box/
+!Dataset_BigData/CURE_dataset/CURE_dataset_test/
+
+# ================================
+# 📝 Logs & Output
+# ================================
+*.log
+logs/
+outputs/
+results/
+experiments/
+*.out
+*.err
+
+# ================================
+# 🔧 IDEs & Editors
+# ================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ================================
+# 🐳 Docker
+# ================================
+.dockerignore
+docker-compose.override.yml
+
+# ================================
+# ☁️ Cloud & Deployment
+# ================================
+.env
+.env.local
+.env.production
+*.key
+*.pem
+.aws/
+.gcp/
+.azure/
+
+# ================================
+# 📦 Package Managers
+# ================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ================================
+# 🧪 Testing
+# ================================
+.coverage
+.pytest_cache/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ================================
+# 📱 Jupyter Notebooks
+# ================================
+.ipynb_checkpoints
+*.ipynb
+
+# ================================
+# 🔒 Secrets
+# ================================
+secrets.yaml
+config/local.yaml
+.secret
+*.secret
+
+# ================================
+# 📊 Large Files
+# ================================
+*.zip
+*.tar.gz
+*.7z
+*.rar

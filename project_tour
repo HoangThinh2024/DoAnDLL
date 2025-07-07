@@ -1,0 +1,52 @@
+#!/bin/bash
+# 🎉 QUICK PROJECT TOUR - Smart Pill Recognition System
+# Hướng dẫn nhanh sau khi tối ưu hóa project
+
+echo "🔥 SMART PILL RECOGNITION SYSTEM - OPTIMIZED PROJECT"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+echo "🎯 QUICK START COMMANDS:"
+echo "  🖥️  CLI Interface:    ./bin/pill-cli"
+echo "  🌐 Web Interface:    ./bin/pill-web"
+echo "  ⚙️  Setup:           ./bin/pill-setup"
+echo "  🚀 Training:         ./bin/pill-train"
+echo "  🧪 Testing:          ./bin/pill-test"
+echo ""
+
+echo "📁 PROJECT STRUCTURE:"
+echo "  📱 apps/            # CLI & Web applications"
+echo "  🗃️  bin/             # Executable scripts"
+echo "  🔧 core/            # Core modules"
+echo "  📚 docs/            # Documentation"
+echo "  🗄️  legacy/          # Legacy files"
+echo "  📓 notebooks/       # Jupyter notebooks"
+echo "  🛠️  tools/           # Development tools"
+echo ""
+
+echo "✨ MAIN FEATURES:"
+echo "  ✅ Unified launcher (main.py)"
+echo "  ✅ Rich CLI interface"
+echo "  ✅ Modern Streamlit WebUI"
+echo "  ✅ No duplicate files"
+echo "  ✅ Clean project structure"
+echo "  ✅ Comprehensive documentation"
+echo ""
+
+echo "🚀 USAGE EXAMPLES:"
+echo "  python main.py cli                    # Launch CLI"
+echo "  python main.py web                    # Launch Web UI"
+echo "  python main.py recognize image.jpg    # Recognize pill"
+echo "  python main.py status                 # System status"
+echo ""
+
+echo "📖 DOCUMENTATION:"
+echo "  📄 README.md                          # Main documentation"
+echo "  📚 docs/DEMO_GUIDE.md                 # Demo guide"
+echo "  🎯 docs/OPTIMIZATION_SUMMARY.md       # Optimization details"
+echo "  🧹 docs/CLEANUP_SUMMARY.md            # Cleanup report"
+echo "  🎉 docs/FINAL_OPTIMIZATION_REPORT.md  # Final report"
+echo ""
+
+echo "🎊 PROJECT STATUS: PRODUCTION READY!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,0 +1,4 @@
+#!/bin/bash
+# pill-cli - Convenience script for Smart Pill Recognition
+cd "$(dirname "$0")/.."
+python3 main.py cli "$@"

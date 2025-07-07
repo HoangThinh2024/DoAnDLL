@@ -1,0 +1,4 @@
+#!/bin/bash
+# pill-web - Convenience script for Smart Pill Recognition
+cd "$(dirname "$0")/.."
+python3 main.py web "$@"
