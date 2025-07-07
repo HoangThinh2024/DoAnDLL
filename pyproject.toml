@@ -1,17 +1,29 @@
 [project]
-name = "multimodal-pill-recognition"
-version = "1.0.0"
-description = "Hệ thống nhận dạng viên thuốc multimodal với Transformer"
+name = "pill-recognition-system"
+version = "2.0.0"
+description = "🏥 Hệ thống nhận dạng viên thuốc thông minh với AI đa phương thức - Smart Pill Recognition với UV Package Manager (Updated: 07/07/2025 21:30 GMT+7)"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "DoAnDLL Team", email = "team@pill-recognition.dev"}
 ]
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-keywords = ["machine-learning", "multimodal", "transformers", "computer-vision", "pill-recognition", "ubuntu-22.04", "quadro-6000", "cuda-12.8"]
+keywords = [
+    "machine-learning", 
+    "multimodal", 
+    "transformers", 
+    "computer-vision", 
+    "pill-recognition",
+    "medical-ai",
+    "drug-identification",
+    "healthcare",
+    "uv-package-manager",
+    "vietnam-timezone"
+]
 
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Healthcare Industry",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -19,94 +31,150 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Operating System :: POSIX :: Linux",
-    "Environment :: GPU :: NVIDIA CUDA :: 12.8",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Environment :: GPU :: NVIDIA CUDA :: 12",
+    "Environment :: Console",
+    "Environment :: Web Environment",
 ]
 
+# Core dependencies - optimized for performance and compatibility
 dependencies = [
-    # Core dependencies - optimized for Ubuntu 22.04 and Quadro 6000 with CUDA 12.8
-    "torch>=2.3.0",
-    "torchvision>=0.18.0",
-    "torchaudio>=2.3.0",
-    "transformers>=4.40.0",
-    "timm>=1.0.3",
-    "numpy>=1.26.0",
-    "pandas>=2.2.0",
-    "Pillow>=10.2.0",
-    "opencv-python-headless>=4.9.0",
+    # 🧠 Core AI/ML Framework
+    "torch>=2.3.0,<3.0",
+    "torchvision>=0.18.0,<1.0",
+    "torchaudio>=2.3.0,<3.0",
+    "transformers>=4.40.0,<5.0",
+    "timm>=1.0.3,<2.0",
     
-    # Streamlit UI
-    "streamlit>=1.25.0",
-    "streamlit-option-menu>=0.3.6",
-    "plotly>=5.15.0",
+    # 📊 Data Science & Processing
+    "numpy>=1.26.0,<2.0",
+    "pandas>=2.2.0,<3.0",
+    "pillow>=10.2.0,<11.0",
+    "opencv-python-headless>=4.9.0,<5.0",
+    "scikit-learn>=1.4.0,<2.0",
     
-    # Big Data & Distributed Computing
-    "pyspark>=3.4.0",
-    "findspark>=2.0.1",
-    "pyarrow>=12.0.0",
+    # 🌐 Web UI & Visualization
+    "streamlit>=1.32.0,<2.0",
+    "streamlit-option-menu>=0.3.6,<1.0",
+    "plotly>=5.19.0,<6.0",
+    "matplotlib>=3.7.0,<4.0",
+    "seaborn>=0.12.0,<1.0",
     
-    # Search & Indexing
-    "elasticsearch>=8.8.0",
-    "sentence-transformers>=2.2.2",
+    # 🔧 CLI & Terminal UI
+    "rich>=13.7.0,<14.0",
+    "typer>=0.9.0,<1.0",
+    "click>=8.1.0,<9.0",
     
-    # ML & Data Science
-    "scikit-learn>=1.3.0",
-    "matplotlib>=3.7.0",
-    "seaborn>=0.12.0",
-    "tqdm>=4.65.0",
+    # 🔍 Image & Text Processing
+    "albumentations>=1.3.1,<2.0",
+    "nltk>=3.8.1,<4.0",
     
-    # Configuration & Logging
-    "hydra-core>=1.3.0",
-    "wandb>=0.15.0",
-    "loguru>=0.7.0",
+    # 📝 Utilities & Configuration
+    "tqdm>=4.65.0,<5.0",
+    "pyyaml>=6.0.1,<7.0",
+    "python-dotenv>=1.0.0,<2.0",
+    "loguru>=0.7.0,<1.0",
+    "psutil>=5.9.6,<6.0",
     
-    # Image processing
-    "albumentations>=1.3.1",
-    "imgaug>=0.4.0",
-    
-    # Text processing
-    "nltk>=3.8.1",
-    "spacy>=3.6.0",
+    # 🌐 API & Networking
+    "requests>=2.31.0,<3.0",
+    "fastapi>=0.104.0,<1.0",
+    "uvicorn>=0.24.0,<1.0",
 ]
-
 [project.optional-dependencies]
+# 🎮 GPU Acceleration
 gpu = [
-    # GPU Acceleration (Rapids) - only for x86_64 with NVIDIA GPU
-    "cudf-cu11>=23.06.0; platform_machine=='x86_64'",
-    "cuml-cu11>=23.06.0; platform_machine=='x86_64'",
-    "cupy-cuda11x>=12.0.0; platform_machine=='x86_64'",
+    "cudf-cu12>=24.04.0; platform_machine=='x86_64'",
+    "cuml-cu12>=24.04.0; platform_machine=='x86_64'",
+    "cupy-cuda12x>=13.0.0; platform_machine=='x86_64'",
+    "nvidia-ml-py>=12.535.133",
 ]
 
+# 🛠️ Development Tools
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-    "mypy>=1.0.0",
-    "pre-commit>=3.0.0",
+    "pytest>=7.4.0,<8.0",
+    "pytest-cov>=4.1.0,<5.0",
+    "pytest-asyncio>=0.21.0,<1.0",
+    "black>=23.12.0,<24.0",
+    "isort>=5.13.0,<6.0",
+    "flake8>=6.1.0,<7.0",
+    "mypy>=1.8.0,<2.0",
+    "pre-commit>=3.6.0,<4.0",
+    "jupyter>=1.0.0,<2.0",
+    "jupyterlab>=4.0.0,<5.0",
+]
+
+# 📊 Data Science Extras
+datascience = [
+    "jupyter>=1.0.0",
+    "ipykernel>=6.29.0",
+    "ipywidgets>=8.1.0",
+    "plotly>=5.19.0",
+    "bokeh>=3.3.0",
+    "altair>=5.2.0",
+]
+
+# 🚀 Performance Optimization
+performance = [
+    "numba>=0.59.0",
+    "cython>=3.0.0",
+    "pyarrow>=15.0.0",
+]
+
+# 🌐 Web & API
+web = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "gunicorn>=21.2.0",
+    "websockets>=12.0",
+]
+
+# 📦 All extras combined
+all = [
+    "pill-recognition-system[gpu,dev,datascience,performance,web]"
 ]
 
 [project.urls]
-Homepage = "https://github.com/username/DoAnDLL"
-Repository = "https://github.com/username/DoAnDLL"
-Documentation = "https://github.com/username/DoAnDLL#readme"
-Issues = "https://github.com/username/DoAnDLL/issues"
+Homepage = "https://github.com/DoAnDLL/pill-recognition"
+Repository = "https://github.com/DoAnDLL/pill-recognition"
+Documentation = "https://github.com/DoAnDLL/pill-recognition#readme"
+Issues = "https://github.com/DoAnDLL/pill-recognition/issues"
+Changelog = "https://github.com/DoAnDLL/pill-recognition/releases"
+"Bug Reports" = "https://github.com/DoAnDLL/pill-recognition/issues"
+"Feature Requests" = "https://github.com/DoAnDLL/pill-recognition/discussions"
 
 [project.scripts]
-pill-recognition = "app:main"
+pill-cli = "apps.cli.main:main"
+pill-web = "apps.web.streamlit_app:main"
+pill-train = "core.training.trainer:main"
+pill-recognize = "main:recognize_cli"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.21.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["core", "apps"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/core",
+    "/apps", 
+    "/docs",
+    "/tests",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+# 🖌️ Code Formatting
 [tool.black]
 line-length = 100
-target-version = ['py38']
+target-version = ['py310']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -117,8 +185,12 @@ extend-exclude = '''
   | \.mypy_cache
   | \.tox
   | \.venv
+  | venv
+  | \.vscode
+  | __pycache__
   | build
   | dist
+  | legacy
 )/
 '''
 
@@ -130,10 +202,83 @@ include_trailing_comma = true
 force_grid_wrap = 0
 use_parentheses = true
 ensure_newline_before_comments = true
+src_paths = ["core", "apps", "tests"]
 
+# 🔍 Type Checking
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "torch.*",
+    "torchvision.*",
+    "transformers.*",
+    "streamlit.*",
+    "cv2.*",
+    "PIL.*",
+]
+ignore_missing_imports = true
+
+# 🧪 Testing
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests that require GPU",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["core", "apps"]
+omit = [
+    "*/tests/*",
+    "*/legacy/*", 
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\bProtocol\):",
+    "@(abc\.)?abstractmethod",
+]
+
+# 🔧 UV Configuration
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0", 
+    "black>=23.12.0",
+    "isort>=5.13.0",
+    "flake8>=6.1.0",
+    "mypy>=1.8.0",
+]
+
+[tool.uv.sources]
+# Use fast PyPI mirrors for better performance
+torch = { index = "https://download.pytorch.org/whl/cu121" }
+torchvision = { index = "https://download.pytorch.org/whl/cu121" }
+torchaudio = { index = "https://download.pytorch.org/whl/cu121" }

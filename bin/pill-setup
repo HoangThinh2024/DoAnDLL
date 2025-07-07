@@ -1,4 +1,267 @@
 #!/bin/bash
-# pill-setup - Convenience script for Smart Pill Recognition
+
+# 🚀 Pill Recognition System - Setup Script
+# Cài đặt tự động với UV Python Package Manager
+
+set -e  # Exit on any error
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Progress indicator
+show_progress() {
+    echo -e "${CYAN}🔄 $1${NC}"
+}
+
+show_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+show_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+show_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+show_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
+}
+
+# Navigate to project root
 cd "$(dirname "$0")/.."
-./bin/setup "$@"
+
+# Banner
+echo -e "${PURPLE}"
+cat << "EOF"
+┌─────────────────────────────────────────────────────┐
+│                                                     │
+│   💊 Smart Pill Recognition System                 │
+│   🚀 Cài đặt tự động với UV Package Manager        │
+│   📅 Updated: 07/07/2025 21:30 (GMT+7)             │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+EOF
+echo -e "${NC}"
+
+# Show current time in Vietnam timezone
+echo -e "${BLUE}🕐 Setup started at: $(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M:%S %Z (GMT%z)')${NC}"
+
+# Check OS
+show_progress "Kiểm tra hệ điều hành..."
+if [[ "$OSTYPE" != "linux-gnu"* ]]; then
+    show_error "Chỉ hỗ trợ Linux! OS hiện tại: $OSTYPE"
+    exit 1
+fi
+
+OS_NAME=$(lsb_release -si 2>/dev/null || echo "Unknown")
+OS_VERSION=$(lsb_release -sr 2>/dev/null || echo "Unknown")
+show_info "OS: $OS_NAME $OS_VERSION"
+
+# Check Python version
+show_progress "Kiểm tra Python..."
+if ! command -v python3 &> /dev/null; then
+    show_error "Python3 không được tìm thấy! Vui lòng cài đặt Python 3.10+"
+    exit 1
+fi
+
+PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+REQUIRED_VERSION="3.10"
+
+if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 10) else 1)"; then
+    show_error "Yêu cầu Python $REQUIRED_VERSION+, nhưng tìm thấy $PYTHON_VERSION"
+    show_info "Cài đặt Python 3.10+:"
+    echo "  sudo apt update"
+    echo "  sudo apt install python3.10 python3.10-venv python3.10-dev"
+    exit 1
+fi
+
+show_success "Python $PYTHON_VERSION đã sẵn sàng"
+
+# Install UV if not exists
+show_progress "Cài đặt UV Python Package Manager..."
+if ! command -v uv &> /dev/null; then
+    show_info "Đang tải UV..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    
+    # Add to PATH for current session
+    export PATH="$HOME/.cargo/bin:$PATH"
+    
+    # Add to shell profile
+    if [[ -f "$HOME/.bashrc" ]]; then
+        echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$HOME/.bashrc"
+    fi
+    if [[ -f "$HOME/.zshrc" ]]; then
+        echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$HOME/.zshrc"
+    fi
+    
+    show_success "UV đã được cài đặt"
+else
+    show_success "UV đã có sẵn: $(uv --version)"
+fi
+
+# Create virtual environment
+show_progress "Tạo Python Virtual Environment..."
+ENV_NAME="pill-recognition-env"
+
+# Remove existing env if exists
+if [[ -d ".venv" ]]; then
+    show_warning "Môi trường ảo cũ đã tồn tại, đang xóa..."
+    rm -rf .venv
+fi
+
+# Create new environment
+uv venv .venv --python 3.10
+show_success "Môi trường ảo đã được tạo: .venv"
+
+# Activate environment
+source .venv/bin/activate
+show_success "Đã kích hoạt môi trường ảo"
+
+# Upgrade pip and install UV in venv
+show_progress "Cập nhật UV trong môi trường ảo..."
+uv pip install --upgrade pip setuptools wheel
+
+# Install dependencies
+show_progress "Cài đặt dependencies từ pyproject.toml..."
+if [[ -f "pyproject.toml" ]]; then
+    uv pip install -e .
+    show_success "Dependencies cốt lõi đã được cài đặt"
+else
+    show_warning "Không tìm thấy pyproject.toml, cài đặt từ requirements.txt..."
+    if [[ -f "requirements.txt" ]]; then
+        uv pip install -r requirements.txt
+        show_success "Dependencies đã được cài đặt từ requirements.txt"
+    else
+        show_error "Không tìm thấy pyproject.toml hoặc requirements.txt!"
+        exit 1
+    fi
+fi
+
+# Check GPU support
+show_progress "Kiểm tra hỗ trợ GPU..."
+if command -v nvidia-smi &> /dev/null; then
+    GPU_INFO=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits 2>/dev/null | head -1)
+    if [[ -n "$GPU_INFO" ]]; then
+        show_success "GPU được phát hiện: $GPU_INFO"
+        
+        # Install GPU dependencies
+        show_progress "Cài đặt dependencies GPU..."
+        uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+        
+        # Try to install CUDA accelerated packages
+        show_progress "Cài đặt packages tăng tốc CUDA..."
+        uv pip install cudf-cu12 cuml-cu12 cupy-cuda12x || {
+            show_warning "Không thể cài đặt packages CUDA (bình thường nếu không có GPU phù hợp)"
+        }
+        
+        show_success "Cài đặt GPU hoàn tất"
+    else
+        show_warning "NVIDIA GPU không được phát hiện"
+    fi
+else
+    show_warning "nvidia-smi không tìm thấy - Chế độ CPU only"
+fi
+
+# Install development dependencies
+show_progress "Cài đặt development tools..."
+uv pip install pytest pytest-cov black isort flake8 jupyter
+
+# Create necessary directories
+show_progress "Tạo thư mục cần thiết..."
+mkdir -p data/{raw,processed} checkpoints logs results notebooks
+show_success "Thư mục đã được tạo"
+
+# Download test data (if available)
+show_progress "Kiểm tra dữ liệu test..."
+if [[ -d "Dataset_BigData/CURE_dataset" ]]; then
+    show_success "Dataset CURE đã có sẵn"
+else
+    show_warning "Dataset CURE chưa có - vui lòng tải về và giải nén vào Dataset_BigData/"
+fi
+
+# Create activation script
+show_progress "Tạo script kích hoạt môi trường..."
+cat > activate_env.sh << 'EOF'
+#!/bin/bash
+# Kích hoạt môi trường ảo cho Pill Recognition System
+echo "🚀 Kích hoạt môi trường Pill Recognition..."
+source .venv/bin/activate
+echo "✅ Môi trường đã sẵn sàng!"
+echo "💡 Sử dụng: ./bin/pill-cli hoặc ./bin/pill-web"
+EOF
+chmod +x activate_env.sh
+
+# Test installation
+show_progress "Kiểm tra cài đặt..."
+python -c "
+import sys
+print(f'✅ Python: {sys.version}')
+
+try:
+    import torch
+    print(f'✅ PyTorch: {torch.__version__}')
+    print(f'✅ CUDA available: {torch.cuda.is_available()}')
+    if torch.cuda.is_available():
+        print(f'✅ GPU: {torch.cuda.get_device_name(0)}')
+except ImportError:
+    print('❌ PyTorch không khả dụng')
+
+try:
+    import streamlit
+    print(f'✅ Streamlit: {streamlit.__version__}')
+except ImportError:
+    print('❌ Streamlit không khả dụng')
+
+try:
+    import pandas as pd
+    import numpy as np
+    from PIL import Image
+    print('✅ Data science packages available')
+except ImportError:
+    print('❌ Một số data science packages thiếu')
+"
+
+# Final setup
+show_success "Cài đặt hoàn tất!"
+
+echo -e "\n${CYAN}📋 Thông tin hệ thống:${NC}"
+echo "────────────────────────────────────"
+echo "🐍 Python: $PYTHON_VERSION"
+echo "📦 UV: $(uv --version)"
+echo "🗂️  Môi trường: .venv"
+echo "💾 Thư mục dự án: $(pwd)"
+echo "🕐 Hoàn thành lúc: $(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M:%S %Z (GMT%z)')"
+
+if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
+    echo "🎮 GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader,nounits | head -1)"
+    echo "🔥 CUDA: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits | head -1)"
+fi
+
+echo -e "\n${GREEN}🚀 Cách sử dụng:${NC}"
+echo "────────────────────────────────────"
+echo "# Kích hoạt môi trường:"
+echo "source .venv/bin/activate"
+echo ""
+echo "# Hoặc sử dụng script:"
+echo "./activate_env.sh"
+echo ""
+echo "# Chạy ứng dụng:"
+echo "./bin/pill-cli          # CLI interface"
+echo "./bin/pill-web          # Web interface"
+echo "python main.py --help   # Xem tất cả options"
+
+echo -e "\n${YELLOW}📚 Documentation:${NC}"
+echo "────────────────────────────────────"
+echo "📖 README.md           - Hướng dẫn chính"
+echo "📁 docs/               - Documentation đầy đủ"
+echo "🎥 docs/DEMO_GUIDE.md  - Hướng dẫn demo"
+
+echo -e "\n${GREEN}✨ Chúc bạn có trải nghiệm tuyệt vời với Pill Recognition System!${NC}"
