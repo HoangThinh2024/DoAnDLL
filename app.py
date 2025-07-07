@@ -18,6 +18,9 @@ import time
 import sys
 sys.path.append('src')
 
+# Add CURE dataset and port management imports
+from data.cure_dataset import CUREDataset, create_cure_dataloaders, analyze_cure_dataset
+from utils.port_manager import PortManager, get_streamlit_port
 from models.multimodal_transformer import MultimodalPillTransformer
 from data.data_processing import PillDataset, get_data_transforms
 from utils.utils import (

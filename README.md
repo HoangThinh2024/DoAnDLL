@@ -203,6 +203,7 @@ pip install jupyter notebook pytest black flake8
 |:-------:|:-----------:|:---------------:|
 | `./setup` | System setup | `sudo ./setup` |
 | `./run` | Start application | `./run`, `./run --port 8080` |
+| `./train` | Train models | `./train`, `./train --quick` |
 | `./test` | Run tests | `./test`, `./test --gpu` |
 | `./deploy` | Deploy to production | `./deploy`, `./deploy --cloud` |
 | `./monitor` | Monitor GPU/system | `./monitor`, `./monitor --health` |
@@ -250,6 +251,48 @@ pip install jupyter notebook pytest black flake8
 ./clean --docker       # Remove unused Docker resources
 ./clean --logs         # Clear log files
 ./clean --all          # Complete cleanup
+```
+
+### 🧠 Model Training
+
+Train custom models on the CURE dataset with multimodal features:
+
+```bash
+# Quick training (for testing)
+./train --quick
+
+# Full training with default settings
+./train
+
+# Custom training parameters
+./train --epochs 50 --batch-size 32 --learning-rate 1e-3
+
+# Training options
+./train --help          # Show all options
+./train --epochs 30     # Number of training epochs
+./train --batch-size 16 # Training batch size
+./train --patience 5    # Early stopping patience
+./train --seed 42       # Random seed for reproducibility
+```
+
+**Training Features:**
+- 🎯 **Multimodal Learning**: RGB + Contour + Texture + Text features
+- 📊 **Advanced Metrics**: mAP, precision, recall, F1-score
+- 🛑 **Early Stopping**: Prevents overfitting
+- 📈 **Learning Rate Scheduling**: Adaptive optimization
+- 💾 **Checkpoint Saving**: Resume training anytime
+- 📊 **Training Visualization**: Automatic plot generation
+
+**Model Inference:**
+```bash
+# Recognize single image
+python recognize.py --image path/to/image.jpg
+
+# Batch evaluation on test set
+python recognize.py --test-dir path/to/test/directory
+
+# Use specific model
+python recognize.py --model-path training_results_*/best_model.pth --image image.jpg
 ```
 
 ---
