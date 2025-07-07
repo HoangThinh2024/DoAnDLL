@@ -1,0 +1,202 @@
+#!/bin/bash
+
+# Smart Pill Recognition - Main Runner
+# Optimized for Ubuntu 22.04 + Nvidia Quadro 6000 + CUDA 12.8
+
+# Function to show usage
+show_help() {
+    echo "🚀 Smart Pill Recognition - Main Runner"
+    echo "========================================"
+    echo ""
+    echo "Usage: ./run [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --web         Start web interface (default)"
+    echo "  --port PORT   Custom port (default: 8501)"
+    echo "  --dev         Development mode with debug"
+    echo "  --gpu-only    Force GPU usage only"
+    echo "  --docker      Start with Docker"
+    echo "  --logs        Show application logs"
+    echo "  --help        Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  ./run                    # Start web interface"
+    echo "  ./run --port 8080        # Custom port"
+    echo "  ./run --dev              # Development mode"
+    echo "  ./run --docker           # Docker deployment"
+    echo ""
+    echo "Quick commands:"
+    echo "  ./setup      # One-time system setup"
+    echo "  ./test       # Test system and GPU"
+    echo "  ./deploy     # Production deployment"
+    echo "  ./monitor    # Monitor GPU usage"
+}
+
+# Default values
+PORT=8501
+MODE="web"
+DEV_MODE=false
+GPU_ONLY=false
+SHOW_LOGS=false
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --web)
+            MODE="web"
+            shift
+            ;;
+        --port)
+            PORT="$2"
+            shift 2
+            ;;
+        --dev)
+            DEV_MODE=true
+            shift
+            ;;
+        --gpu-only)
+            GPU_ONLY=true
+            shift
+            ;;
+        --docker)
+            MODE="docker"
+            shift
+            ;;
+        --logs)
+            SHOW_LOGS=true
+            shift
+            ;;
+        --help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "❌ Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+echo "🚀 Smart Pill Recognition System"
+echo "Optimized for Ubuntu 22.04 + Nvidia Quadro 6000 + CUDA 12.8"
+echo ""
+
+# Check if running as root
+if [ "$EUID" -eq 0 ]; then
+    echo "❌ Please don't run as root for security reasons"
+    exit 1
+fi
+
+# Quick system check
+echo "🔍 Quick System Check..."
+if ! nvidia-smi > /dev/null 2>&1; then
+    echo "⚠️  NVIDIA GPU not detected. Run './setup' first."
+    if [ "$GPU_ONLY" = true ]; then
+        echo "❌ GPU-only mode requested but no GPU available"
+        exit 1
+    fi
+fi
+
+# Set optimal environment variables
+export PYTHONPATH=/workspaces/DoAnDLL/src:/workspaces/DoAnDLL
+export OMP_NUM_THREADS=16
+export MKL_NUM_THREADS=16
+export NUMEXPR_NUM_THREADS=16
+export CUDA_LAUNCH_BLOCKING=0
+export PATH="$HOME/.local/bin:$PATH"
+
+# GPU optimizations if available
+if nvidia-smi > /dev/null 2>&1; then
+    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits)
+    echo "🎮 Detected GPU: $GPU_NAME"
+    
+    if [[ $GPU_NAME == *"Quadro"* ]]; then
+        echo "✅ Applying Quadro optimizations..."
+        sudo nvidia-smi -pm 1 2>/dev/null || true
+        export CUDA_VISIBLE_DEVICES=0
+        export TORCH_CUDNN_V8_API_ENABLED=1
+        export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+        export CUDA_MODULE_LOADING=LAZY
+    fi
+fi
+
+# Create directories
+mkdir -p data/{raw,processed} checkpoints logs results
+
+# Clear GPU memory
+if [ "$GPU_ONLY" = true ] || nvidia-smi > /dev/null 2>&1; then
+    python3 -c "import torch; torch.cuda.empty_cache() if torch.cuda.is_available() else None" 2>/dev/null || true
+fi
+
+# Handle different modes
+case $MODE in
+    "web")
+        echo "🌐 Starting Web Interface..."
+        
+        # Check dependencies
+        if [ ! -f ".deps_installed" ]; then
+            echo "📦 Installing dependencies..."
+            if command -v uv > /dev/null 2>&1; then
+                uv pip install -r requirements.txt
+            else
+                pip install -r requirements.txt
+            fi
+            touch .deps_installed
+        fi
+        
+        # Set Streamlit options
+        STREAMLIT_ARGS="--server.port=$PORT --server.address=0.0.0.0"
+        
+        if [ "$DEV_MODE" = true ]; then
+            echo "💻 Development mode enabled"
+            STREAMLIT_ARGS="$STREAMLIT_ARGS --server.runOnSave=true --server.allowRunOnSave=true"
+        fi
+        
+        echo "🌍 Starting at: http://localhost:$PORT"
+        echo "💡 Press Ctrl+C to stop"
+        
+        if [ "$SHOW_LOGS" = true ]; then
+            streamlit run app.py $STREAMLIT_ARGS --logger.level=debug
+        else
+            streamlit run app.py $STREAMLIT_ARGS
+        fi
+        ;;
+        
+    "docker")
+        echo "🐳 Starting with Docker..."
+        
+        # Check if Docker is available
+        if ! command -v docker > /dev/null 2>&1; then
+            echo "❌ Docker not found. Run './setup' first."
+            exit 1
+        fi
+        
+        # Check if docker-compose.yml exists
+        if [ ! -f "docker-compose.yml" ]; then
+            echo "❌ docker-compose.yml not found"
+            exit 1
+        fi
+        
+        echo "🏗️ Building and starting containers..."
+        docker-compose up -d
+        
+        echo "⏳ Waiting for services to start..."
+        sleep 10
+        
+        echo "📊 Service Status:"
+        docker-compose ps
+        
+        echo ""
+        echo "✅ Services started successfully!"
+        echo "🌍 Web Interface: http://localhost:8501"
+        echo "📊 Monitoring: docker-compose logs -f"
+        echo "🛑 Stop: docker-compose down"
+        ;;
+        
+    *)
+        echo "❌ Unknown mode: $MODE"
+        show_help
+        exit 1
+        ;;
+esac

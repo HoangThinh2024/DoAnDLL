@@ -53,13 +53,30 @@ def load_checkpoint(filepath, model, optimizer=None, scheduler=None, device='cpu
 
 
 def get_device():
-    """Get the best available device"""
+    """Get the best available device with Quadro 6000 optimization"""
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        logger.info(f"Using GPU: {torch.cuda.get_device_name()}")
+        gpu_name = torch.cuda.get_device_name()
+        gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)  # GB
+        
+        logger.info(f"Using GPU: {gpu_name}")
+        logger.info(f"GPU Memory: {gpu_memory:.2f} GB")
+        
+        # Optimize for Quadro 6000 (24GB VRAM)
+        if "Quadro" in gpu_name and gpu_memory > 20:
+            torch.cuda.empty_cache()
+            # Enable memory fraction for large models
+            torch.cuda.set_per_process_memory_fraction(0.9)
+            logger.info("Applied Quadro 6000 optimization settings")
+        
+        # Print current memory usage
+        allocated = torch.cuda.memory_allocated(0) / (1024**3)
+        cached = torch.cuda.memory_reserved(0) / (1024**3)
+        logger.info(f"GPU Memory - Allocated: {allocated:.2f} GB, Cached: {cached:.2f} GB")
+        
     else:
         device = torch.device("cpu")
-        logger.info("Using CPU")
+        logger.info("CUDA not available, using CPU")
     return device
 
 
@@ -193,3 +210,96 @@ def cosine_annealing_lr(optimizer, current_epoch, max_epochs, base_lr, min_lr=0)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
     return lr
+
+
+def clear_gpu_memory():
+    """Clear GPU memory cache"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        logger.info("GPU memory cache cleared")
+
+
+def get_gpu_memory_info():
+    """Get detailed GPU memory information"""
+    if not torch.cuda.is_available():
+        return None
+    
+    device = torch.cuda.current_device()
+    total_memory = torch.cuda.get_device_properties(device).total_memory / (1024**3)
+    allocated_memory = torch.cuda.memory_allocated(device) / (1024**3)
+    cached_memory = torch.cuda.memory_reserved(device) / (1024**3)
+    free_memory = total_memory - allocated_memory
+    
+    memory_info = {
+        'total': total_memory,
+        'allocated': allocated_memory,
+        'cached': cached_memory,
+        'free': free_memory,
+        'utilization': (allocated_memory / total_memory) * 100
+    }
+    
+    return memory_info
+
+
+def optimize_for_quadro_6000():
+    """Apply specific optimizations for Nvidia Quadro 6000 with CUDA 12.8"""
+    if torch.cuda.is_available():
+        # Enable CuDNN benchmark for consistent input sizes
+        torch.backends.cudnn.benchmark = True
+        # Enable TensorFloat-32 (TF32) for Ampere GPUs
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        
+        # New CUDA 12.8 optimizations
+        if hasattr(torch.backends.cuda, 'flash_sdp_enabled'):
+            torch.backends.cuda.flash_sdp_enabled(True)  # Flash Attention
+        if hasattr(torch.backends.cuda, 'math_sdp_enabled'):
+            torch.backends.cuda.math_sdp_enabled(True)   # Math SDP
+        
+        # Set memory growth
+        torch.cuda.empty_cache()
+        
+        gpu_name = torch.cuda.get_device_name()
+        if "Quadro" in gpu_name:
+            # Optimize batch sizes for Quadro 6000's 24GB VRAM
+            logger.info("Applied Quadro 6000 + CUDA 12.8 specific optimizations")
+            return True
+    return False
+
+
+def monitor_gpu_usage():
+    """Monitor and log GPU usage"""
+    if torch.cuda.is_available():
+        try:
+            import nvidia_ml_py3 as nvml
+            nvml.nvmlInit()
+            handle = nvml.nvmlDeviceGetHandleByIndex(0)
+            
+            # GPU utilization
+            utilization = nvml.nvmlDeviceGetUtilizationRates(handle)
+            
+            # Memory info
+            memory_info = nvml.nvmlDeviceGetMemoryInfo(handle)
+            memory_total = memory_info.total / (1024**3)
+            memory_used = memory_info.used / (1024**3)
+            memory_free = memory_info.free / (1024**3)
+            
+            # Temperature
+            temperature = nvml.nvmlDeviceGetTemperature(handle, nvml.NVML_TEMPERATURE_GPU)
+            
+            logger.info(f"GPU Utilization: {utilization.gpu}%")
+            logger.info(f"Memory Usage: {memory_used:.2f}/{memory_total:.2f} GB ({(memory_used/memory_total)*100:.1f}%)")
+            logger.info(f"GPU Temperature: {temperature}°C")
+            
+            nvml.nvmlShutdown()
+            
+            return {
+                'gpu_utilization': utilization.gpu,
+                'memory_utilization': (memory_used/memory_total)*100,
+                'temperature': temperature
+            }
+        except ImportError:
+            logger.warning("nvidia-ml-py3 not installed. Limited GPU monitoring available.")
+            return get_gpu_memory_info()
+    return None

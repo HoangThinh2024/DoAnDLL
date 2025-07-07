@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# Deployment script for Ubuntu 22.04 with Nvidia Quadro 6000 and CUDA 12.8
+# This script sets up the environment and optimizes for server deployment
+
+echo "🚀 Deploying Multimodal Pill Recognition System on Ubuntu 22.04 + Quadro 6000 + CUDA 12.8"
+
+# Check Ubuntu version
+echo "📋 Checking system information..."
+lsb_release -a
+uname -a
+
+# Check NVIDIA driver and CUDA
+echo "🔍 Checking NVIDIA GPU and CUDA installation..."
+nvidia-smi
+nvcc --version
+
+# Check if Docker is installed
+if ! command -v docker &> /dev/null; then
+    echo "❌ Docker not found. Installing Docker..."
+    sudo apt-get update
+    sudo apt-get install -y docker.io
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    sudo usermod -aG docker $USER
+fi
+
+# Check if Docker Compose is installed
+if ! command -v docker-compose &> /dev/null; then
+    echo "❌ Docker Compose not found. Installing..."
+    sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
+fi
+
+# Install NVIDIA Container Toolkit
+echo "🐳 Setting up NVIDIA Container Toolkit..."
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+
+# Verify NVIDIA Docker runtime with CUDA 12.8
+echo "🔧 Testing NVIDIA Docker runtime with CUDA 12.8..."
+docker run --rm --gpus all nvidia/cuda:12.8-base-ubuntu22.04 nvidia-smi
+
+# Create necessary directories
+echo "📁 Creating project directories..."
+mkdir -p data/{raw,processed}
+mkdir -p checkpoints
+mkdir -p logs
+mkdir -p results
+
+# Set proper permissions
+sudo chown -R $USER:$USER .
+chmod +x *.sh
+
+# Build and run the application
+echo "🏗️ Building Docker images..."
+docker-compose build
+
+echo "🚀 Starting services..."
+docker-compose up -d
+
+# Wait for services to start
+echo "⏳ Waiting for services to initialize..."
+sleep 30
+
+# Check service status
+echo "📊 Checking service status..."
+docker-compose ps
+
+# Show GPU usage
+echo "🎮 Current GPU status:"
+nvidia-smi
+
+# Display access information
+echo ""
+echo "✅ Deployment completed successfully!"
+echo "🌐 Application URL: http://localhost:8501"
+echo "📊 Spark UI: http://localhost:8080"
+echo "🔍 Elasticsearch: http://localhost:9200"
+echo ""
+echo "📝 To monitor logs: docker-compose logs -f pill-recognition"
+echo "🛑 To stop services: docker-compose down"
+echo "🔄 To restart: docker-compose restart"

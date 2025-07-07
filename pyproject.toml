@@ -7,32 +7,34 @@ authors = [
 ]
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.8"
-keywords = ["machine-learning", "multimodal", "transformers", "computer-vision", "pill-recognition"]
+requires-python = ">=3.10"
+keywords = ["machine-learning", "multimodal", "transformers", "computer-vision", "pill-recognition", "ubuntu-22.04", "quadro-6000", "cuda-12.8"]
 
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: GPU :: NVIDIA CUDA :: 12.8",
 ]
 
 dependencies = [
-    # Core dependencies
-    "torch>=2.0.0",
-    "torchvision>=0.15.0",
-    "transformers>=4.30.0",
-    "timm>=0.9.0",
-    "numpy>=1.24.0",
-    "pandas>=2.0.0",
-    "Pillow>=9.5.0",
-    "opencv-python>=4.7.0",
+    # Core dependencies - optimized for Ubuntu 22.04 and Quadro 6000 with CUDA 12.8
+    "torch>=2.3.0",
+    "torchvision>=0.18.0",
+    "torchaudio>=2.3.0",
+    "transformers>=4.40.0",
+    "timm>=1.0.3",
+    "numpy>=1.26.0",
+    "pandas>=2.2.0",
+    "Pillow>=10.2.0",
+    "opencv-python-headless>=4.9.0",
     
     # Streamlit UI
     "streamlit>=1.25.0",

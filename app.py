@@ -20,8 +20,18 @@ sys.path.append('src')
 
 from models.multimodal_transformer import MultimodalPillTransformer
 from data.data_processing import PillDataset, get_data_transforms
-from utils.utils import load_checkpoint, get_device
+from utils.utils import (
+    load_checkpoint, 
+    get_device, 
+    optimize_for_quadro_6000, 
+    monitor_gpu_usage, 
+    clear_gpu_memory,
+    get_gpu_memory_info
+)
 from utils.metrics import MetricsCalculator
+
+# Initialize GPU optimizations for Quadro 6000
+optimize_for_quadro_6000()
 
 # Configure page
 st.set_page_config(

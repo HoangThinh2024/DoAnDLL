@@ -19,27 +19,54 @@ from collections import defaultdict
 from ..models.multimodal_transformer import MultimodalPillTransformer
 from ..data.data_processing import create_dataloaders, SparkDataProcessor
 from ..utils.metrics import MetricsCalculator
-from ..utils.utils import set_seed, save_checkpoint, load_checkpoint, EarlyStopping
+from ..utils.utils import (
+    set_seed, 
+    save_checkpoint, 
+    load_checkpoint, 
+    EarlyStopping,
+    optimize_for_quadro_6000,
+    monitor_gpu_usage,
+    clear_gpu_memory,
+    get_gpu_memory_info
+)
 
 
 class MultimodalTrainer:
-    """Advanced trainer for multimodal pill recognition model"""
+    """Advanced trainer for multimodal pill recognition model - optimized for Quadro 6000"""
     
     def __init__(self, config: Dict[str, Any], resume_from: Optional[str] = None):
         self.config = config
+        
+        # Apply Quadro 6000 specific optimizations
+        optimize_for_quadro_6000()
+        
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        # Multi-GPU support
+        # Multi-GPU support with optimization for Quadro 6000
         if torch.cuda.device_count() > 1:
             logger.info(f"Using {torch.cuda.device_count()} GPUs")
             self.multi_gpu = True
         else:
             self.multi_gpu = False
             
+        # Log GPU information
+        if torch.cuda.is_available():
+            gpu_memory_info = get_gpu_memory_info()
+            if gpu_memory_info:
+                logger.info(f"GPU Memory: {gpu_memory_info['total']:.2f} GB total, {gpu_memory_info['free']:.2f} GB free")
+            
         logger.info(f"Using device: {self.device}")
         
         # Set random seed for reproducibility
         set_seed(config.get("training", {}).get("seed", 42))
+        
+        # Initialize mixed precision scaler for Quadro 6000
+        self.use_mixed_precision = config.get("hardware", {}).get("gpu", {}).get("mixed_precision", True)
+        if self.use_mixed_precision and torch.cuda.is_available():
+            self.scaler = GradScaler()
+            logger.info("Mixed precision training enabled for Quadro 6000")
+        else:
+            self.scaler = None
         
         # Initialize model
         self.model = self._create_model()
@@ -51,11 +78,6 @@ class MultimodalTrainer:
         self.metrics_calculator = MetricsCalculator(
             num_classes=config["model"]["classifier"]["num_classes"]
         )
-        
-        # Initialize mixed precision scaler
-        self.use_amp = config.get("training", {}).get("use_amp", True)
-        if self.use_amp:
-            self.scaler = GradScaler()
         
         # Initialize metrics tracking
         self.train_metrics = defaultdict(list)
@@ -185,7 +207,7 @@ class MultimodalTrainer:
             self.optimizer.zero_grad()
             
             # Forward pass with mixed precision
-            if self.use_amp:
+            if self.use_mixed_precision:
                 with autocast():
                     outputs = self.model(images, input_ids, attention_mask)
                     loss = F.cross_entropy(outputs['logits'], labels)
@@ -271,7 +293,7 @@ class MultimodalTrainer:
                 labels = batch['label'].to(self.device)
                 
                 # Forward pass
-                if self.use_amp:
+                if self.use_mixed_precision:
                     with autocast():
                         outputs = self.model(images, input_ids, attention_mask)
                         loss = F.cross_entropy(outputs['logits'], labels)

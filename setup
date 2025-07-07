@@ -1,0 +1,149 @@
+#!/bin/bash
+
+# Setup script for Ubuntu 22.04 with Nvidia Quadro 6000
+# This script prepares the system for optimal performance
+
+echo "🔧 Setting up Ubuntu 22.04 for Multimodal Pill Recognition with Quadro 6000"
+
+# Update system
+echo "📦 Updating system packages..."
+sudo apt update && sudo apt upgrade -y
+
+# Install essential packages
+echo "🛠️ Installing essential packages..."
+sudo apt install -y \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    wget \
+    vim \
+    htop \
+    tree \
+    unzip \
+    software-properties-common \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    bc
+
+# Install Python 3.10 and pip
+echo "🐍 Setting up Python 3.10..."
+sudo apt install -y python3.10 python3.10-dev python3.10-venv python3-pip
+sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
+
+# Install NVIDIA drivers (if not already installed)
+echo "🎮 Checking NVIDIA drivers..."
+if ! command -v nvidia-smi &> /dev/null; then
+    echo "Installing NVIDIA drivers..."
+    sudo apt install -y nvidia-driver-535
+    echo "⚠️  NVIDIA drivers installed. Please reboot the system and run this script again."
+    exit 1
+fi
+
+# Install CUDA 12.8 (compatible with Quadro 6000)
+echo "🔥 Installing CUDA 12.8..."
+if ! command -v nvcc &> /dev/null; then
+    # Add NVIDIA package repositories
+    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+    sudo dpkg -i cuda-keyring_1.1-1_all.deb
+    sudo apt-get update
+    
+    # Install CUDA 12.8
+    sudo apt-get -y install cuda-toolkit-12-8
+    
+    # Add CUDA to PATH
+    echo 'export PATH=/usr/local/cuda-12.8/bin:$PATH' >> ~/.bashrc
+    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.8/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+    echo 'export CUDA_HOME=/usr/local/cuda-12.8' >> ~/.bashrc
+    source ~/.bashrc
+fi
+
+# Install cuDNN
+echo "🧠 Installing cuDNN for CUDA 12.8..."
+if [ ! -f "/usr/local/cuda/include/cudnn.h" ]; then
+    # Download and install cuDNN (you may need to register and download manually)
+    echo "Please download cuDNN 9.x for CUDA 12.8 from NVIDIA website and place the files in:"
+    echo "- Headers: /usr/local/cuda/include/"
+    echo "- Libraries: /usr/local/cuda/lib64/"
+    echo "Or install via package manager if available"
+fi
+
+# Install Docker
+echo "🐳 Installing Docker..."
+if ! command -v docker &> /dev/null; then
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt update
+    sudo apt install -y docker-ce docker-ce-cli containerd.io
+    sudo usermod -aG docker $USER
+fi
+
+# Install Docker Compose
+echo "🐙 Installing Docker Compose..."
+if ! command -v docker-compose &> /dev/null; then
+    sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
+fi
+
+# Install NVIDIA Container Toolkit
+echo "🔗 Installing NVIDIA Container Toolkit..."
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+
+# Install Python dependencies
+echo "📚 Installing Python dependencies..."
+pip install --upgrade pip setuptools wheel
+pip install uv  # Fast Python package installer
+
+# System optimizations for ML workloads
+echo "⚡ Applying system optimizations..."
+
+# Increase shared memory for PyTorch DataLoader
+echo "kernel.shmmax = 68719476736" | sudo tee -a /etc/sysctl.conf
+echo "kernel.shmall = 4294967296" | sudo tee -a /etc/sysctl.conf
+
+# Optimize network settings
+echo "net.core.rmem_max = 134217728" | sudo tee -a /etc/sysctl.conf
+echo "net.core.wmem_max = 134217728" | sudo tee -a /etc/sysctl.conf
+
+# Apply sysctl settings
+sudo sysctl -p
+
+# Set up GPU performance mode
+echo "🚀 Configuring GPU performance..."
+sudo nvidia-smi -pm 1  # Enable persistence mode
+sudo nvidia-smi -ac 6251,1911  # Set memory and graphics clocks to maximum
+
+# Create swap file if not exists (for large model training)
+if [ ! -f /swapfile ]; then
+    echo "💾 Creating swap file..."
+    sudo fallocate -l 32G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+fi
+
+# Make scripts executable
+chmod +x *.sh
+
+# Display system information
+echo ""
+echo "✅ Setup completed! System information:"
+echo "======================================"
+echo "OS: $(lsb_release -d | cut -f2)"
+echo "Kernel: $(uname -r)"
+echo "Python: $(python --version)"
+echo "CUDA: $(nvcc --version | grep -o 'release [0-9.]*' || echo 'Not found')"
+echo "Docker: $(docker --version)"
+echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader,nounits)"
+echo ""
+echo "🔄 Please reboot the system to ensure all changes take effect:"
+echo "sudo reboot"

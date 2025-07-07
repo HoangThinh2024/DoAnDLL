@@ -1,23 +1,29 @@
-# Makefile for Multimodal Pill Recognition System
+# Makefile for Multimodal Pill Recognition System - Ubuntu 22.04 + Quadro 6000 + CUDA 12.8
 
-.PHONY: help install install-gpu run train notebook clean test lint format docker-build docker-run
+.PHONY: help setup install install-gpu run train notebook clean test lint format docker-build docker-run monitor
 
 # Default target
 help:
-	@echo "🚀 Multimodal Pill Recognition System"
+	@echo "🚀 Multimodal Pill Recognition System - Ubuntu 22.04 + Quadro 6000 + CUDA 12.8"
+	@echo "=========================================================================="
 	@echo ""
 	@echo "Available commands:"
+	@echo "  make setup        - Setup Ubuntu 22.04 environment"
 	@echo "  make install      - Install dependencies with uv"
-	@echo "  make install-gpu  - Install with GPU support"
+	@echo "  make install-gpu  - Install with GPU support (Quadro 6000 + CUDA 12.8)"
 	@echo "  make run          - Run Streamlit app"
 	@echo "  make train        - Run training script"
 	@echo "  make notebook     - Start Jupyter Lab"
 	@echo "  make test         - Run tests"
+	@echo "  make gpu-test     - Test GPU functionality"
+	@echo "  make cuda-verify  - Verify CUDA 12.8 installation"
 	@echo "  make lint         - Run linting"
 	@echo "  make format       - Format code with black"
 	@echo "  make clean        - Clean cache and temp files"
 	@echo "  make docker-build - Build Docker image"
 	@echo "  make docker-run   - Run with Docker"
+	@echo "  make monitor      - Monitor GPU usage"
+	@echo "  make deploy       - Deploy for production"
 
 # Setup virtual environment and install dependencies
 install:
@@ -109,3 +115,39 @@ check:
 	@python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
 	@uv --version
 	@echo "✅ System check complete!"
+
+# Setup Ubuntu 22.04 environment
+setup:
+	@echo "🔧 Setting up Ubuntu 22.04 environment..."
+	chmod +x setup_ubuntu22.sh
+	sudo ./setup_ubuntu22.sh
+
+# Test GPU functionality
+gpu-test:
+	@echo "🎮 Testing GPU functionality..."
+	chmod +x start.sh
+	./start.sh test
+
+# Monitor GPU usage
+monitor:
+	@echo "📊 Starting GPU monitoring..."
+	chmod +x monitor_gpu.sh
+	./monitor_gpu.sh monitor
+
+# Deploy for production
+deploy:
+	@echo "🚀 Deploying for production..."
+	chmod +x deploy_ubuntu22.sh
+	./deploy_ubuntu22.sh
+
+# Optimize GPU settings
+optimize:
+	@echo "⚡ Optimizing GPU settings..."
+	chmod +x monitor_gpu.sh
+	sudo ./monitor_gpu.sh optimize
+
+# Verify CUDA 12.8 installation
+cuda-verify:
+	@echo "🔧 Verifying CUDA 12.8 installation..."
+	chmod +x verify_cuda128.sh
+	./verify_cuda128.sh

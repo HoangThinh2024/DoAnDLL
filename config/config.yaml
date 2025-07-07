@@ -1,33 +1,121 @@
+# Smart Pill Recognition - Configuration
+# Optimized for Ubuntu 22.04 + Quadro 6000 + CUDA 12.8
+
+# Model Configuration
 model:
-  name: "multimodal_pill_transformer"
-  visual_encoder:
-    type: "vit"  # vision_transformer or resnet
-    model_name: "vit_base_patch16_224"
-    pretrained: true
-    freeze_backbone: false
-    output_dim: 768
+  name: "smart_pill_recognition"
   
-  text_encoder:
-    type: "bert"
-    model_name: "bert-base-uncased"
+  # Vision Model (Image Analysis)
+  vision:
+    type: "vit_base_patch16_224"
     pretrained: true
-    freeze_backbone: false
-    output_dim: 768
-    max_length: 128
-  
-  fusion:
-    type: "cross_attention"  # concat, cross_attention, bilinear
-    hidden_dim: 512
-    num_attention_heads: 8
+    freeze_layers: 0
     dropout: 0.1
-  
+    
+  # Text Model (Imprint Analysis)  
+  text:
+    type: "bert-base-uncased"
+    max_length: 128
+    dropout: 0.1
+    
+  # Fusion Method
+  fusion:
+    type: "cross_attention"
+    hidden_dim: 768
+    num_heads: 8
+    dropout: 0.1
+    
+  # Classification
   classifier:
-    num_classes: 1000  # Number of pill classes
-    hidden_dims: [512, 256]
-    dropout: 0.3
+    num_classes: 1000
+    hidden_dims: [768, 512, 256]
+    dropout: 0.2
+
+# Training Configuration  
+training:
+  # Basic Settings
+  batch_size: 64          # Optimized for Quadro 6000
+  learning_rate: 1e-4
+  num_epochs: 100
+  
+  # Optimization
+  optimizer: "adamw"
+  scheduler: "cosine"
+  weight_decay: 1e-5
+  gradient_clip: 1.0
+  
+  # GPU Optimization
+  mixed_precision: true   # CUDA 12.8 feature
+  compile_model: true     # PyTorch 2.3+ feature
+  
+  # Early Stopping
+  patience: 15
+  min_delta: 0.001
+
+# Data Configuration
+data:
+  # Image Settings
+  image_size: 224
+  channels: 3
+  
+  # Data Split
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  
+  # Augmentation
+  augmentation:
+    enabled: true
+    rotation: 15
+    brightness: 0.2
+    contrast: 0.2
+    horizontal_flip: 0.5
+
+# Hardware Configuration
+hardware:
+  # GPU Settings (CUDA 12.8)
+  gpu:
+    device: "cuda"
+    memory_fraction: 0.9
+    benchmark_mode: true
+    enable_tf32: true
+    flash_attention: true
+    
+  # System Settings
+  system:
+    num_workers: 8
+    pin_memory: true
+    prefetch_factor: 4
+
+# Application Settings
+app:
+  # Web Interface
+  web:
+    port: 8501
+    host: "0.0.0.0"
+    title: "Smart Pill Recognition"
+    
+  # Performance
+  performance:
+    max_upload_size: 10   # MB
+    cache_size: 100       # Number of cached results
+    
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/app.log"
+  max_size: "50MB"
+  backup_count: 5
+
+# Deployment Settings
+deployment:
+  environment: "development"  # development, staging, production
+  debug: false
+  profiling: false
 
 training:
-  batch_size: 32
+  batch_size: 64  # Increased for Quadro 6000's 24GB VRAM
   learning_rate: 1e-4
   num_epochs: 100
   warmup_steps: 1000
@@ -40,6 +128,12 @@ training:
   # Early stopping
   patience: 10
   min_delta: 0.001
+  
+  # GPU optimization for Quadro 6000
+  mixed_precision: true
+  gradient_accumulation_steps: 2
+  pin_memory: true
+  num_workers: 8  # Optimized for Ubuntu 22.04
 
 data:
   image_size: 224
@@ -57,13 +151,16 @@ data:
     hue: 0.1
     horizontal_flip: 0.5
     
-  # Spark configuration
+  # Spark configuration - optimized for Ubuntu 22.04
   spark:
     app_name: "PillRecognitionETL"
     master: "local[*]"
-    executor_memory: "4g"
-    driver_memory: "2g"
-    max_result_size: "2g"
+    executor_memory: "8g"  # Increased for better performance
+    driver_memory: "4g"    # Increased for large datasets
+    max_result_size: "4g"
+    executor_cores: "4"
+    sql_adaptive_enabled: true
+    sql_adaptive_coalescePartitions_enabled: true
 
 logging:
   level: "INFO"
@@ -76,3 +173,19 @@ inference:
   model_path: "./checkpoints/best_model.pth"
   confidence_threshold: 0.8
   batch_size: 16
+
+# Hardware optimization for Ubuntu 22.04 + Quadro 6000 + CUDA 12.8
+hardware:
+  gpu:
+    device: "cuda"
+    mixed_precision: true
+    memory_fraction: 0.9
+    benchmark_mode: true
+    enable_tf32: true
+    cuda_version: "12.8"
+    flash_attention: true  # New in CUDA 12.8
+  
+  system:
+    num_threads: 16  # Optimized for server environment
+    prefetch_factor: 4
+    persistent_workers: true
