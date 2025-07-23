@@ -132,11 +132,9 @@ def load_model_and_config():
             config = {
                 "model": {
                     "classifier": {"num_classes": 1000},
-                },
-                "data": {"image_size": 224},
-                "model": {
                     "text_encoder": {"max_length": 128}
-                }
+                },
+                "data": {"image_size": 224}
             }
         
         if TORCH_AVAILABLE:
@@ -429,8 +427,9 @@ def main():
     model, config, device = load_model_and_config()
     sample_data = load_sample_data()
     
-    if model is None:
-        st.error("❌ Không thể tải model. Vui lòng kiểm tra cài đặt.")
+    # Only show error if model AND config both fail
+    if config is None or len(config) == 0:
+        st.error("❌ Không thể tải cấu hình. Vui lòng kiểm tra cài đặt.")
         return
     
     # Get tokenizer (create a simple one for demo)
@@ -500,7 +499,7 @@ def main():
                 st.markdown(f"""
                 <div class="metric-card">
                     <h4>📝 Độ dài text tối đa</h4>
-                    <p>Max {config["model"]["text_encoder"]["max_length"]} tokens</p>
+                    <p>Max {config.get("model", {}).get("text_encoder", {}).get("max_length", 128)} tokens</p>
                 </div>
                 """, unsafe_allow_html=True)
         
@@ -549,7 +548,7 @@ def main():
             with col1:
                 # Display uploaded image
                 image = Image.open(uploaded_file)
-                st.image(image, caption="Hình ảnh đã upload", use_column_width=True)
+                st.image(image, caption="Hình ảnh đã upload", use_container_width=True)
                 
                 # Image info
                 st.markdown(f"""
@@ -648,7 +647,7 @@ def main():
             
             if PLOTLY_AVAILABLE:
                 fig = px.bar(x=classes, y=counts, title="Pill Class Distribution")
-                fig.update_xaxis(tickangle=45)
+                fig.update_layout(xaxis_tickangle=45)  # Use update_layout instead of update_xaxis
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # Pie chart
