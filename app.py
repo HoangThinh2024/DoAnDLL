@@ -145,26 +145,80 @@ def load_model_and_config():
             checkpoint_path = "checkpoints/best_model.pth"
             if os.path.exists(checkpoint_path):
                 try:
-                    model = torch.load(checkpoint_path, map_location=device)
-                    st.success("✅ Model loaded successfully!")
+                    # First try loading as PyTorch model
+                    try:
+                        model = torch.load(checkpoint_path, map_location=device)
+                        st.success("✅ PyTorch model loaded successfully!")
+                    except Exception:
+                        # Fallback: try loading as pickle (from training simulation)
+                        import pickle
+                        with open(checkpoint_path, "rb") as f:
+                            model = pickle.load(f)
+                        st.success("✅ Simulated model loaded successfully!")
+                        st.info("📝 Using training simulation model - upgrade to full PyTorch training for production use.")
                 except Exception as e:
                     st.warning(f"⚠️ Could not load model checkpoint: {str(e)}")
                     st.info("Running in demo mode.")
                     model = None
             else:
                 st.warning("⚠️ No trained model found. Running in demo mode.")
-                st.info("💡 You can create a model by running the training process.")
+                st.info("💡 You can create a model by running: python training_simulation.py")
                 model = None
         else:
             device = "cpu"
             model = None
-            st.info("🔧 Running in demo mode without PyTorch")
+            # Check for simulated model even without PyTorch
+            checkpoint_path = "checkpoints/best_model.pth"
+            if os.path.exists(checkpoint_path):
+                try:
+                    import pickle
+                    with open(checkpoint_path, "rb") as f:
+                        model = pickle.load(f)
+                    st.success("✅ Simulated model loaded successfully!")
+                    st.info("📝 Using training simulation model. For full functionality, install PyTorch.")
+                except Exception as e:
+                    st.warning(f"⚠️ Could not load simulated model: {str(e)}")
+                    model = None
+            else:
+                st.info("🔧 Running in demo mode without PyTorch")
+                st.info("💡 Create a model by running: python training_simulation.py")
         
         return model, config, device
     
     except Exception as e:
         st.error(f"❌ Error loading model: {str(e)}")
         return None, {}, "cpu"
+
+
+def get_model_info(model):
+    """Get information about the loaded model"""
+    if model is None:
+        return None
+    
+    try:
+        # Check if it's a simulation model (dict with specific keys)
+        if isinstance(model, dict) and 'metadata' in model:
+            metadata = model['metadata']
+            config = model.get('config', {})
+            return {
+                'type': 'Simulation Model',
+                'version': metadata.get('version', 'Unknown'),
+                'best_accuracy': metadata.get('best_accuracy', 0.0),
+                'epoch': model.get('epoch', 0),
+                'batch_size': config.get('batch_size', 'Unknown'),
+                'learning_rate': config.get('learning_rate', 'Unknown'),
+                'num_classes': config.get('num_classes', 'Unknown')
+            }
+        # Check if it's a PyTorch model
+        elif hasattr(model, 'state_dict'):
+            return {
+                'type': 'PyTorch Model',
+                'num_parameters': sum(p.numel() for p in model.parameters() if hasattr(model, 'parameters'))
+            }
+        else:
+            return {'type': 'Unknown Model Type'}
+    except Exception:
+        return None
 
 
 @st.cache_data
@@ -487,18 +541,36 @@ def main():
             ### 📈 Thống kê hệ thống
             """)
             
+            # Display model information if available
+            model_info = get_model_info(model)
+            if model_info:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>🤖 Model đã tải</h4>
+                    <p>{model_info['type']}</p>
+                    {f"<p>Accuracy: {model_info['best_accuracy']:.4f}</p>" if 'best_accuracy' in model_info else ""}
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>🤖 Model Status</h4>
+                    <p>Demo mode - No model loaded</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
             if config:
                 st.markdown(f"""
                 <div class="metric-card">
                     <h4>🎯 Số lớp thuốc</h4>
-                    <p>{config["model"]["classifier"]["num_classes"]} lớp</p>
+                    <p>{config.get("model", {}).get("classifier", {}).get("num_classes", 1000)} lớp</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 st.markdown(f"""
                 <div class="metric-card">
                     <h4>🖼️ Kích thước ảnh</h4>
-                    <p>{config["data"]["image_size"]}x{config["data"]["image_size"]} pixels</p>
+                    <p>{config.get("data", {}).get("image_size", 224)}x{config.get("data", {}).get("image_size", 224)} pixels</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
