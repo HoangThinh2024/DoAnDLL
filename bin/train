@@ -31,18 +31,29 @@ fi
 
 # Check CUDA availability
 echo -e "${BLUE}🔍 Checking CUDA availability...${NC}"
-python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name() if torch.cuda.is_available() else \"None\"}')" || {
-    echo -e "${RED}❌ Error: Python/PyTorch not properly installed${NC}"
-    echo "Please run: ./setup"
-    exit 1
+python3 -c "
+try:
+    import torch
+    print(f'CUDA available: {torch.cuda.is_available()}')
+    print(f'GPU: {torch.cuda.get_device_name() if torch.cuda.is_available() else \"None\"}')
+except ImportError:
+    print('PyTorch not installed - will run in simulation mode')
+" || {
+    echo -e "${YELLOW}⚠️  PyTorch not installed. Running in simulation mode...${NC}"
+    echo -e "${BLUE}ℹ️  For full training functionality, install PyTorch: pip install torch${NC}"
 }
 
 # Check dependencies
 echo -e "${BLUE}🔍 Checking dependencies...${NC}"
-python3 -c "from paddleocr import PaddleOCR; from transformers import BertTokenizer; print('✅ All dependencies available')" || {
-    echo -e "${YELLOW}⚠️  Some dependencies missing. Installing...${NC}"
-    ./setup
-}
+python3 -c "
+try:
+    from paddleocr import PaddleOCR
+    from transformers import BertTokenizer
+    print('✅ All dependencies available')
+except ImportError as e:
+    print(f'⚠️  Some dependencies missing: {e}')
+    print('Will proceed with available functionality...')
+"
 
 # Create training directory if needed
 mkdir -p logs
@@ -146,15 +157,52 @@ echo "📄 Training log: $LOG_FILE"
 echo ""
 
 # Run training with logging
-python3 train_cure_model.py \
-    --dataset-path "$DATASET_PATH" \
-    --epochs "$EPOCHS" \
-    --batch-size "$BATCH_SIZE" \
-    --learning-rate "$LEARNING_RATE" \
-    --validation-split "$VALIDATION_SPLIT" \
-    --patience "$PATIENCE" \
-    --seed "$SEED" \
-    2>&1 | tee "$LOG_FILE"
+# Use the correct training script path, with fallback to simulation
+PYTORCH_AVAILABLE=false
+python3 -c "import torch" 2>/dev/null && PYTORCH_AVAILABLE=true
+
+if [ "$PYTORCH_AVAILABLE" = "true" ] && [ -f "train_multi_method.py" ]; then
+    echo "🔄 Using train_multi_method.py for training..."
+    python3 train_multi_method.py \
+        --dataset-path "$DATASET_PATH" \
+        --epochs "$EPOCHS" \
+        --batch-size "$BATCH_SIZE" \
+        --learning-rate "$LEARNING_RATE" \
+        --validation-split "$VALIDATION_SPLIT" \
+        --patience "$PATIENCE" \
+        --seed "$SEED" \
+        2>&1 | tee "$LOG_FILE"
+elif [ "$PYTORCH_AVAILABLE" = "true" ] && [ -f "legacy/train_cure_model.py" ]; then
+    echo "🔄 Using legacy/train_cure_model.py for training..."
+    python3 legacy/train_cure_model.py \
+        --dataset-path "$DATASET_PATH" \
+        --epochs "$EPOCHS" \
+        --batch-size "$BATCH_SIZE" \
+        --learning-rate "$LEARNING_RATE" \
+        --validation-split "$VALIDATION_SPLIT" \
+        --patience "$PATIENCE" \
+        --seed "$SEED" \
+        2>&1 | tee "$LOG_FILE"
+elif [ -f "training_simulation.py" ]; then
+    echo "🔄 Using training_simulation.py for demonstration..."
+    echo -e "${YELLOW}ℹ️  Running training simulation (PyTorch not available)${NC}"
+    python3 training_simulation.py \
+        --dataset-path "$DATASET_PATH" \
+        --epochs "$EPOCHS" \
+        --batch-size "$BATCH_SIZE" \
+        --learning-rate "$LEARNING_RATE" \
+        --validation-split "$VALIDATION_SPLIT" \
+        --patience "$PATIENCE" \
+        --seed "$SEED" \
+        2>&1 | tee "$LOG_FILE"
+else
+    echo -e "${RED}❌ Error: No training script found${NC}"
+    echo "Available scripts:"
+    echo "  - train_multi_method.py (requires PyTorch)"
+    echo "  - legacy/train_cure_model.py (requires PyTorch)"
+    echo "  - training_simulation.py (demo mode)"
+    exit 1
+fi
 
 # Check if training was successful
 if [ ${PIPESTATUS[0]} -eq 0 ]; then

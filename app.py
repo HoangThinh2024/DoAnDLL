@@ -144,10 +144,16 @@ def load_model_and_config():
             # Try to load model if available
             checkpoint_path = "checkpoints/best_model.pth"
             if os.path.exists(checkpoint_path):
-                model = torch.load(checkpoint_path, map_location=device)
-                st.success("✅ Model loaded successfully!")
+                try:
+                    model = torch.load(checkpoint_path, map_location=device)
+                    st.success("✅ Model loaded successfully!")
+                except Exception as e:
+                    st.warning(f"⚠️ Could not load model checkpoint: {str(e)}")
+                    st.info("Running in demo mode.")
+                    model = None
             else:
                 st.warning("⚠️ No trained model found. Running in demo mode.")
+                st.info("💡 You can create a model by running the training process.")
                 model = None
         else:
             device = "cpu"
