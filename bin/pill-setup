@@ -148,62 +148,53 @@ if [[ -f "pyproject.toml" && -f "requirements.txt" ]]; then
     read -p "Chọn [1/2, mặc định 1]: " DEP_SRC
     DEP_SRC=${DEP_SRC:-1}
     if [[ "$DEP_SRC" == "2" ]]; then
-        uv pip install -r requirements.txt
-        show_success "Dependencies đã được cài đặt từ requirements.txt"
+        # Filter out GPU packages and conflicting packages from requirements.txt before install
+        grep -Ev '^(cudf-cu12|cuml-cu12|cupy-cuda12x|torch|torchaudio|torchvision|requests)' requirements.txt > requirements-nogpu.txt
+        uv pip install -r requirements-nogpu.txt --index-url https://pypi.org/simple
+        rm requirements-nogpu.txt
+        show_success "Dependencies đã được cài đặt từ requirements.txt (không bao gồm GPU packages và requests)"
     else
-        uv pip install -e .
+        uv pip install -e . --index-url https://pypi.org/simple
         show_success "Dependencies cốt lõi đã được cài đặt từ pyproject.toml"
     fi
 elif [[ -f "pyproject.toml" ]]; then
-    uv pip install -e .
+    uv pip install -e . --index-url https://pypi.org/simple
     show_success "Dependencies cốt lõi đã được cài đặt từ pyproject.toml"
 elif [[ -f "requirements.txt" ]]; then
-    uv pip install -r requirements.txt
-    show_success "Dependencies đã được cài đặt từ requirements.txt"
+    grep -Ev '^(cudf-cu12|cuml-cu12|cupy-cuda12x|torch|torchaudio|torchvision|requests)' requirements.txt > requirements-nogpu.txt
+    uv pip install -r requirements-nogpu.txt --index-url https://pypi.org/simple
+    rm requirements-nogpu.txt
+    show_success "Dependencies đã được cài đặt từ requirements.txt (không bao gồm GPU packages và requests)"
 else
     show_error "Không tìm thấy pyproject.toml hoặc requirements.txt!"
     exit 1
 fi
 
 # Chọn chế độ cài đặt GPU/CPU
-if [[ "$MODE" == "gpu" ]]; then
+elif [[ "$MODE" == "cpu" ]]; then
+# Luôn hỏi người dùng chọn chế độ cài đặt PyTorch (CPU/GPU)
+show_progress "Chọn chế độ cài đặt thêm cho PyTorch (CPU/GPU)..."
+echo -e "${YELLOW}Bạn muốn cài đặt PyTorch cho chế độ nào?${NC}"
+echo "1) GPU (nếu có)"
+echo "2) CPU only"
+read -p "Chọn [1/2, mặc định 2]: " TORCH_MODE
+TORCH_MODE=${TORCH_MODE:-2}
+if [[ "$TORCH_MODE" == "1" ]]; then
     show_progress "Cài đặt dependencies GPU..."
     uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
     uv pip install cudf-cu12 cuml-cu12 cupy-cuda12x || {
         show_warning "Không thể cài đặt packages CUDA (bình thường nếu không có GPU phù hợp)"
     }
     show_success "Cài đặt GPU hoàn tất"
-elif [[ "$MODE" == "cpu" ]]; then
+else
     show_progress "Cài đặt dependencies CPU only..."
     uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
     show_success "Cài đặt CPU-only hoàn tất"
-else
-    # auto mode: phát hiện GPU
-    show_progress "Kiểm tra hỗ trợ GPU..."
-    if command -v nvidia-smi &> /dev/null; then
-        GPU_INFO=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits 2>/dev/null | head -1)
-        if [[ -n "$GPU_INFO" ]]; then
-            show_success "GPU được phát hiện: $GPU_INFO"
-            uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-            uv pip install cudf-cu12 cuml-cu12 cupy-cuda12x || {
-                show_warning "Không thể cài đặt packages CUDA (bình thường nếu không có GPU phù hợp)"
-            }
-            show_success "Cài đặt GPU hoàn tất"
-        else
-            show_warning "NVIDIA GPU không được phát hiện, chuyển sang chế độ CPU only"
-            uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-            show_success "Cài đặt CPU-only hoàn tất"
-        fi
-    else
-        show_warning "nvidia-smi không tìm thấy - Chế độ CPU only"
-        uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-        show_success "Cài đặt CPU-only hoàn tất"
-    fi
 fi
 
 # Install development dependencies
 show_progress "Cài đặt development tools..."
-uv pip install pytest pytest-cov black isort flake8 jupyter
+uv pip install pytest pytest-cov black isort flake8 jupyter --index-url https://pypi.org/simple
 
 # Create necessary directories
 show_progress "Tạo thư mục cần thiết..."
