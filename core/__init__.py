@@ -1,26 +1,26 @@
-# Smart Pill Recognition System - Core Package
+"""
+Smart Pill Recognition System - Core Package
 
 Core AI modules for pharmaceutical identification using multimodal transformers.
+"""
 
-## Modules
+__version__ = "1.0.0"
+__author__ = "DoAnDLL Team"
 
-- **models/**: Neural network architectures
-- **data/**: Dataset handling and preprocessing  
-- **training/**: Training procedures and optimizers
-- **utils/**: Utility functions and helpers
+# Import main components
+try:
+    from .models.multimodal_transformer import MultimodalPillTransformer
+    from .models.model_registry import ModelRegistry, TrainingMethod
+    from .data.data_processing import preprocess_image
+    from .utils.utils import get_device
+except ImportError:
+    # Handle missing dependencies gracefully
+    pass
 
-## Usage
-
-```python
-from core.models.multimodal_transformer import MultimodalPillTransformer
-from core.data.data_processing import preprocess_image
-
-# Load model
-model = MultimodalPillTransformer.load_pretrained()
-
-# Process image
-image_tensor = preprocess_image(image_path)
-
-# Make prediction
-result = model.predict(image_tensor, text_imprint="ADVIL 200")
-```
+__all__ = [
+    'MultimodalPillTransformer',
+    'ModelRegistry', 
+    'TrainingMethod',
+    'preprocess_image',
+    'get_device'
+]
