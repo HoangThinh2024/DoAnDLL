@@ -18,6 +18,9 @@ import json
 import time
 from datetime import datetime
 import matplotlib.font_manager as fm
+# --- TÍCH HỢP ALBUMENTATIONS ---
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 #nohup python3 your_script.py > /dev/null 2>&1 &
 # nohup python main_Basic_model.py > /dev/null 2>&1 
 font_path = os.path.expanduser('venv/fonts/TIMES.TTF')
@@ -50,7 +53,7 @@ tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 bert_model = BertModel.from_pretrained('bert-base-uncased').to(device)
 
 # Define data augmentation transformations for training
-train_transform = transforms.Compose([
+train_transforms = transforms.Compose([
     transforms.RandomHorizontalFlip(),
     transforms.RandomVerticalFlip(),
     transforms.RandomRotation(15),
@@ -60,10 +63,44 @@ train_transform = transforms.Compose([
 ])
 
 # Define transformations for validation (no augmentation)
-val_transform = transforms.Compose([
+val_transforms = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
+
+
+train_transform = A.Compose([
+    A.RandomResizedCrop(height=224, width=224, scale=(0.8, 1.0)),
+    A.HorizontalFlip(p=0.5),
+    A.VerticalFlip(p=0.5),
+    A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=45, p=0.5),
+    
+    # Các phép biến đổi màu sắc chỉ áp dụng cho ảnh RGB
+    A.OneOf([
+        A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.8),
+        A.RGBShift(r_shift_limit=20, g_shift_limit=20, b_shift_limit=20, p=0.8),
+    ], p=1.0), # p=1.0 để đảm bảo một trong hai được chọn
+
+    # Thêm nhiễu
+    A.GaussNoise(p=0.2),
+
+    # *** "SPARK" AUGMENTATION (Coarse Dropout / Cutout) ***
+    # Xóa một vài vùng trên ảnh để buộc model học các đặc trưng toàn cục hơn
+    A.CoarseDropout(max_holes=8, max_height=16, max_width=16, 
+                    min_holes=1, min_height=8, min_width=8, p=0.5),
+
+    # Chuẩn hóa và chuyển sang Tensor
+    A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ToTensorV2(),
+], additional_targets={'contour': 'image', 'texture': 'image'}) # Áp dụng cho cả contour và texture
+
+# Biến đổi cho tập validation (chỉ resize, chuẩn hóa và chuyển sang tensor)
+val_transform = A.Compose([
+    A.Resize(height=224, width=224),
+    A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ToTensorV2(),
+], additional_targets={'contour': 'image', 'texture': 'image'})
+
 
 # Define pre-trained CNN model
 class CNNModel(nn.Module):
