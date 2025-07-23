@@ -9,48 +9,11 @@ echo "=========================================="
 # Function to get GPU info
 get_gpu_info() {
     echo "📊 GPU Information:"
-    if command -v nvidia-smi &> /dev/null; then
-        nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu,utilization.memory --format=csv,noheader,nounits
-    else
-        echo "⚠️  nvidia-smi not found. GPU monitoring not available in this environment."
-        echo "System info:"
-        echo "CPU: $(nproc) cores"
-        echo "Memory: $(free -h | awk '/^Mem:/ {print $2}')"
-        echo "OS: $(uname -s) $(uname -r)"
-    fi
+    nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu,utilization.memory --format=csv,noheader,nounits
 }
 
 # Function to monitor continuously
 monitor_continuous() {
-    if ! command -v nvidia-smi &> /dev/null; then
-        echo "⚠️  nvidia-smi not found. Starting CPU/Memory monitoring instead..."
-        echo "🔄 Starting continuous monitoring (Press Ctrl+C to stop)"
-        while true; do
-            clear
-            echo "💻 System Monitoring Dashboard (No GPU)"
-            echo "Time: $(date)"
-            echo "=========================================="
-            
-            echo "📊 CPU Usage:"
-            top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1 | awk '{printf "CPU Usage: %.1f%%\n", $1}'
-            
-            echo ""
-            echo "💾 Memory Usage:"
-            free -h | awk '/^Mem:/ {printf "Used: %s / %s (%.1f%%)\n", $3, $2, ($3/$2)*100}'
-            
-            echo ""
-            echo "🔥 System Load:"
-            uptime | awk -F'load average:' '{print "Load Average:" $2}'
-            
-            echo ""
-            echo "💽 Disk Usage:"
-            df -h | awk '$NF=="/" {printf "Disk Usage: %s / %s (%s)\n", $3, $2, $5}'
-            
-            sleep 5
-        done
-        return
-    fi
-    
     echo "🔄 Starting continuous monitoring (Press Ctrl+C to stop)"
     while true; do
         clear
@@ -88,7 +51,7 @@ monitor_continuous() {
         
         echo ""
         echo "🐳 Docker Container GPU Usage:"
-        docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" | grep pill-recognition 2>/dev/null || echo "No pill-recognition containers running"
+        docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" | grep pill-recognition
         
         sleep 5
     done
@@ -108,44 +71,7 @@ log_stats() {
 
 # Function to check GPU health
 check_health() {
-    echo "🏥 System Health Check:"
-    
-    if ! command -v nvidia-smi &> /dev/null; then
-        echo "⚠️  nvidia-smi not found - checking system health instead"
-        
-        # Check CPU temperature (if available)
-        if command -v sensors &> /dev/null; then
-            temp=$(sensors | grep "Core 0" | awk '{print $3}' | tr -d '+°C' 2>/dev/null || echo "N/A")
-            if [ "$temp" != "N/A" ] && [ $temp -gt 80 ]; then
-                echo "❌ CPU temperature too high: ${temp}°C (>80°C)"
-            elif [ "$temp" != "N/A" ]; then
-                echo "✅ CPU temperature OK: ${temp}°C"
-            else
-                echo "ℹ️  CPU temperature monitoring not available"
-            fi
-        else
-            echo "ℹ️  Temperature monitoring not available (install lm-sensors)"
-        fi
-        
-        # Check memory usage
-        memory_percent=$(free | awk '/^Mem:/ {printf "%.1f", ($3/$2)*100}')
-        if (( $(echo "$memory_percent > 90" | bc -l) )); then
-            echo "❌ Memory usage too high: ${memory_percent}%"
-        else
-            echo "✅ Memory usage OK: ${memory_percent}%"
-        fi
-        
-        # Check disk space
-        disk_percent=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
-        if [ $disk_percent -gt 90 ]; then
-            echo "❌ Disk usage too high: ${disk_percent}%"
-        else
-            echo "✅ Disk usage OK: ${disk_percent}%"
-        fi
-        
-        echo "✅ System is accessible (no GPU)"
-        return
-    fi
+    echo "🏥 GPU Health Check:"
     
     # Check temperature
     temp=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits)
@@ -176,24 +102,6 @@ check_health() {
 
 # Function to optimize GPU settings
 optimize_gpu() {
-    if ! command -v nvidia-smi &> /dev/null; then
-        echo "⚠️  nvidia-smi not found - GPU optimization not available"
-        echo "🔧 Applying general system optimizations instead..."
-        
-        # CPU governor optimization (if available)
-        if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
-            echo "Setting CPU governor to performance mode..."
-            echo "performance" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null 2>&1 || echo "Need sudo privileges for CPU optimization"
-        fi
-        
-        # Adjust swappiness for better performance
-        echo "Optimizing memory settings..."
-        echo 10 | sudo tee /proc/sys/vm/swappiness > /dev/null 2>&1 || echo "Need sudo privileges for memory optimization"
-        
-        echo "✅ System optimizations applied (limited without GPU)"
-        return
-    fi
-    
     echo "🔧 Applying Quadro 6000 optimizations..."
     
     # Set persistence mode
