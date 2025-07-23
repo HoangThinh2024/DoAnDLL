@@ -292,7 +292,7 @@ def setup_environment():
             print(f"{Colors.RED}❌ Fallback setup failed: {e}{Colors.END}")
             return False
 
-def train_model():
+def train_model(config_path=None):
     """Khởi chạy quá trình huấn luyện model"""
     trainer_script = PROJECT_ROOT / "core" / "training" / "trainer.py"
     
@@ -304,7 +304,10 @@ def train_model():
     print(f"{Colors.YELLOW}⚠️  This may take several hours depending on your hardware{Colors.END}")
     
     try:
-        subprocess.run([sys.executable, str(trainer_script)], cwd=PROJECT_ROOT)
+        cmd = [sys.executable, str(trainer_script)]
+        if config_path:
+            cmd.extend(['--config', config_path])
+        subprocess.run(cmd, cwd=PROJECT_ROOT)
         return True
     except KeyboardInterrupt:
         print(f"\n{Colors.YELLOW}⏹️ Training interrupted by user{Colors.END}")
@@ -464,7 +467,7 @@ def main():
         success = recognize_image(args.image_path, args.text)
     
     elif args.command == 'train':
-        success = train_model()
+        success = train_model(args.config)
     
     elif args.command == 'setup':
         success = setup_environment()
@@ -495,142 +498,4 @@ if __name__ == "__main__":
         sys.exit(0)
     except Exception as e:
         print(f"{Colors.RED}❌ Unexpected error: {e}{Colors.END}")
-
-    
-    # Check key files
-    key_files = [
-        "apps/cli/main.py",
-        "apps/web/streamlit_app.py", 
-        "recognize.py",
-        "train_cure_model.py",
-        "config/config.yaml",
-        "requirements.txt"
-    ]
-    
-    print("\n📄 Key Files:")
-    for file_path in key_files:
-        full_path = PROJECT_ROOT / file_path
-        status = "✅" if full_path.exists() else "❌"
-        print(f"  {status} {file_path}")
-    
-    # Check directories
-    key_dirs = [
-        "Dataset_BigData",
-        "checkpoints",
-        "core",
-        "apps"
-    ]
-    
-    print("\n📂 Directories:")
-    for dir_path in key_dirs:
-        full_path = PROJECT_ROOT / dir_path
-        status = "✅" if full_path.exists() else "❌"
-        print(f"  {status} {dir_path}/")
-    
-    # GPU status
-    print("\n🖥️  Hardware:")
-    try:
-        import torch
-        if torch.cuda.is_available():
-            gpu_name = torch.cuda.get_device_name(0)
-            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
-            print(f"  ✅ GPU: {gpu_name}")
-            print(f"  ✅ Memory: {gpu_memory:.1f} GB")
-            print(f"  ✅ CUDA: {torch.version.cuda}")
-        else:
-            print("  ⚠️  GPU: Không khả dụng")
-    except ImportError:
-        print("  ❌ PyTorch: Chưa cài đặt")
-
-def main():
-    """Main function"""
-    parser = argparse.ArgumentParser(
-        description="🔥 Smart Pill Recognition System Launcher",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Ví dụ sử dụng:
-  python main.py cli                     # Khởi chạy CLI
-  python main.py web                     # Khởi chạy Web UI  
-  python main.py recognize image.jpg     # Nhận dạng ảnh
-  python main.py train                   # Huấn luyện model
-  python main.py setup                   # Setup environment
-  python main.py status                  # Kiểm tra trạng thái
-        """
-    )
-    
-    parser.add_argument(
-        "command",
-        choices=["cli", "web", "recognize", "train", "setup", "status"],
-        help="Lệnh cần thực thi"
-    )
-    
-    parser.add_argument(
-        "image_path",
-        nargs="?",
-        help="Đường dẫn ảnh (cho lệnh recognize)"
-    )
-    
-    parser.add_argument(
-        "--text",
-        help="Text imprint trên viên thuốc"
-    )
-    
-    parser.add_argument(
-        "--config",
-        help="Đường dẫn file config (cho lệnh train)"
-    )
-    
-    parser.add_argument(
-        "--no-banner",
-        action="store_true",
-        help="Không hiển thị banner"
-    )
-    
-    args = parser.parse_args()
-    
-    # Show banner unless disabled
-    if not args.no_banner:
-        show_banner()
-    
-    # Execute command
-    try:
-        if args.command == "cli":
-            launch_cli()
-        
-        elif args.command == "web":
-            launch_web()
-        
-        elif args.command == "recognize":
-            if not args.image_path:
-                print("❌ Cần cung cấp đường dẫn ảnh!")
-                print("Ví dụ: python main.py recognize image.jpg")
-                return 1
-            
-            if not Path(args.image_path).exists():
-                print(f"❌ File không tồn tại: {args.image_path}")
-                return 1
-            
-            recognize_image(args.image_path, args.text)
-        
-        elif args.command == "train":
-            train_model(args.config)
-        
-        elif args.command == "setup":
-            if not setup_environment():
-                return 1
-            print("✅ Setup hoàn thành!")
-        
-        elif args.command == "status":
-            show_status()
-        
-        return 0
-        
-    except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
-        return 0
-    except Exception as e:
-        print(f"❌ Lỗi: {e}")
-        return 1
-
-if __name__ == "__main__":
-    exit(main())
+        sys.exit(1)
