@@ -107,67 +107,98 @@ else
     show_success "UV đã có sẵn: $(uv --version)"
 fi
 
-# Create virtual environment
-show_progress "Tạo Python Virtual Environment..."
-ENV_NAME="pill-recognition-env"
+# Chọn chế độ: GPU hay CPU
+MODE=${1:-auto} # auto, gpu, cpu
 
-# Remove existing env if exists
-if [[ -d ".venv" ]]; then
-    show_warning "Môi trường ảo cũ đã tồn tại, đang xóa..."
-    rm -rf .venv
+# Detect existing virtual environment
+VENV_DIR=""
+for d in .venv venv env .env; do
+    if [[ -d "$d" ]]; then
+        VENV_DIR="$d"
+        break
+    fi
+done
+
+if [[ -z "$VENV_DIR" ]]; then
+    VENV_DIR=".venv"
+    uv venv "$VENV_DIR" --python 3.10
+    show_success "Môi trường ảo đã được tạo: $VENV_DIR"
+else
+    show_success "Đã phát hiện môi trường ảo: $VENV_DIR"
 fi
 
-# Create new environment
-uv venv .venv --python 3.10
-show_success "Môi trường ảo đã được tạo: .venv"
-
 # Activate environment
-source .venv/bin/activate
-show_success "Đã kích hoạt môi trường ảo"
+source "$VENV_DIR"/bin/activate
+show_success "Đã kích hoạt môi trường ảo ($VENV_DIR)"
 
 # Upgrade pip and install UV in venv
 show_progress "Cập nhật UV trong môi trường ảo..."
 uv pip install --upgrade pip setuptools wheel
 
+# Unset PyTorch index before installing core dependencies
+unset PIP_INDEX_URL
+unset PIP_EXTRA_INDEX_URL
+
 # Install dependencies
-show_progress "Cài đặt dependencies từ pyproject.toml..."
-if [[ -f "pyproject.toml" ]]; then
-    uv pip install -e .
-    show_success "Dependencies cốt lõi đã được cài đặt"
-else
-    show_warning "Không tìm thấy pyproject.toml, cài đặt từ requirements.txt..."
-    if [[ -f "requirements.txt" ]]; then
+show_progress "Chọn nguồn cài đặt dependencies..."
+if [[ -f "pyproject.toml" && -f "requirements.txt" ]]; then
+    echo -e "${YELLOW}Bạn muốn cài đặt dependencies từ đâu?${NC}"
+    echo "1) pyproject.toml (recommended)"
+    echo "2) requirements.txt"
+    read -p "Chọn [1/2, mặc định 1]: " DEP_SRC
+    DEP_SRC=${DEP_SRC:-1}
+    if [[ "$DEP_SRC" == "2" ]]; then
         uv pip install -r requirements.txt
         show_success "Dependencies đã được cài đặt từ requirements.txt"
     else
-        show_error "Không tìm thấy pyproject.toml hoặc requirements.txt!"
-        exit 1
+        uv pip install -e .
+        show_success "Dependencies cốt lõi đã được cài đặt từ pyproject.toml"
     fi
+elif [[ -f "pyproject.toml" ]]; then
+    uv pip install -e .
+    show_success "Dependencies cốt lõi đã được cài đặt từ pyproject.toml"
+elif [[ -f "requirements.txt" ]]; then
+    uv pip install -r requirements.txt
+    show_success "Dependencies đã được cài đặt từ requirements.txt"
+else
+    show_error "Không tìm thấy pyproject.toml hoặc requirements.txt!"
+    exit 1
 fi
 
-# Check GPU support
-show_progress "Kiểm tra hỗ trợ GPU..."
-if command -v nvidia-smi &> /dev/null; then
-    GPU_INFO=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits 2>/dev/null | head -1)
-    if [[ -n "$GPU_INFO" ]]; then
-        show_success "GPU được phát hiện: $GPU_INFO"
-        
-        # Install GPU dependencies
-        show_progress "Cài đặt dependencies GPU..."
-        uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-        
-        # Try to install CUDA accelerated packages
-        show_progress "Cài đặt packages tăng tốc CUDA..."
-        uv pip install cudf-cu12 cuml-cu12 cupy-cuda12x || {
-            show_warning "Không thể cài đặt packages CUDA (bình thường nếu không có GPU phù hợp)"
-        }
-        
-        show_success "Cài đặt GPU hoàn tất"
-    else
-        show_warning "NVIDIA GPU không được phát hiện"
-    fi
+# Chọn chế độ cài đặt GPU/CPU
+if [[ "$MODE" == "gpu" ]]; then
+    show_progress "Cài đặt dependencies GPU..."
+    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    uv pip install cudf-cu12 cuml-cu12 cupy-cuda12x || {
+        show_warning "Không thể cài đặt packages CUDA (bình thường nếu không có GPU phù hợp)"
+    }
+    show_success "Cài đặt GPU hoàn tất"
+elif [[ "$MODE" == "cpu" ]]; then
+    show_progress "Cài đặt dependencies CPU only..."
+    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+    show_success "Cài đặt CPU-only hoàn tất"
 else
-    show_warning "nvidia-smi không tìm thấy - Chế độ CPU only"
+    # auto mode: phát hiện GPU
+    show_progress "Kiểm tra hỗ trợ GPU..."
+    if command -v nvidia-smi &> /dev/null; then
+        GPU_INFO=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits 2>/dev/null | head -1)
+        if [[ -n "$GPU_INFO" ]]; then
+            show_success "GPU được phát hiện: $GPU_INFO"
+            uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+            uv pip install cudf-cu12 cuml-cu12 cupy-cuda12x || {
+                show_warning "Không thể cài đặt packages CUDA (bình thường nếu không có GPU phù hợp)"
+            }
+            show_success "Cài đặt GPU hoàn tất"
+        else
+            show_warning "NVIDIA GPU không được phát hiện, chuyển sang chế độ CPU only"
+            uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+            show_success "Cài đặt CPU-only hoàn tất"
+        fi
+    else
+        show_warning "nvidia-smi không tìm thấy - Chế độ CPU only"
+        uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        show_success "Cài đặt CPU-only hoàn tất"
+    fi
 fi
 
 # Install development dependencies

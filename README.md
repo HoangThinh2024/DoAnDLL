@@ -1,308 +1,193 @@
 <div align="center">
 
 # 💊 Smart Pill Recognition System
-*Hệ thống nhận dạng viên thuốc thông minh với AI đa phương thức*
+*Hệ thống nhận dạng viên thuốc thông minh sử dụng AI Multimodal*
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.3+-ee4c2c?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.32+-ff4b4b?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![UV](https://img.shields.io/badge/UV-Package_Manager-663399?style=for-the-badge&logo=python&logoColor=white)](https://github.com/astral-sh/uv)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776ab?style=flat-square&logo=python)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.3+-ee4c2c?style=flat-square&logo=pytorch)](https://pytorch.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.32+-ff4b4b?style=flat-square&logo=streamlit)](https://streamlit.io/)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-🎯 **Nhận dạng viên thuốc chính xác 96.3%** • ⚡ **Xử lý nhanh 0.15s/ảnh** • 🚀 **Cài đặt 1 lệnh**
+🎯 **Độ chính xác 96.3%** • ⚡ **Tốc độ 0.15s/ảnh** • 🚀 **Cài đặt dễ dàng**
 
-[🚀 Bắt đầu ngay](#-cài-đặt-nhanh) • [🎯 Sử dụng](#-cách-sử-dụng) • [📊 Tính năng](#-tính-năng) • [📁 Cấu trúc](#-cấu-trúc-dự-án)
+[🚀 Quickstart](#-quickstart) • [💻 Usage](#-usage) • [📋 Features](#-features) • [🛠️ Development](#️-development)
 
 </div>
 
----
-
-## 🚀 Cài đặt nhanh
-
-### ⚡ Cài đặt tự động (Khuyến nghị)
+## 🚀 Quickstart
 
 ```bash
-# 1. Clone dự án
+# Clone và setup
 git clone <repository-url>
 cd DoAnDLL
-
-# 2. Cài đặt tự động với UV (1 lệnh)
 ./bin/pill-setup
 
-# 3. Kích hoạt môi trường
-source .venv/bin/activate
-# hoặc
-./activate_env.sh
-```
-
-### 🎯 Sử dụng ngay lập tức
-
-```bash
-# Giao diện CLI (Terminal)
-./bin/pill-cli
-
-# Giao diện Web (Trình duyệt)
-./bin/pill-web
-# ➡️ http://localhost:8501
-
-# Nhận dạng trực tiếp
-python main.py recognize image.jpg
-python main.py recognize image.jpg --text "P500"
-```
-
----
-
-## 💡 Tại sao chọn chúng tôi?
-
-<div align="center">
-
-| 🎯 **AI Thông minh** | 🖥️ **Giao diện đẹp** | ⚡ **Hiệu suất cao** | 🛠️ **Dễ sử dụng** |
-|:-------------------:|:--------------------:|:--------------------:|:------------------:|
-| Multimodal AI | Rich CLI + Web UI | 96.3% độ chính xác | Cài đặt 1 lệnh |
-| Vision + Text | Drag & Drop | 0.15s xử lý | UV Package Manager |
-| CUDA tối ưu | Modern Design | Real-time | Auto-setup |
-
-</div>
-
----
-
-## 🎯 Cách sử dụng
-
-### 🖥️ CLI Interface (Terminal)
-```bash
-./bin/pill-cli          # Giao diện terminal đẹp
-./bin/pill-setup        # Cài đặt môi trường
-./bin/pill-train        # Huấn luyện model
-./bin/pill-test         # Chạy test
-```
-
-### 🌐 Web Interface (Trình duyệt)
-```bash
-./bin/pill-web          # Ứng dụng web Streamlit
-# ➡️ Mở trình duyệt: http://localhost:8501
-```
-
-### 🚀 Main Launcher (Đa năng)
-```bash
-python main.py cli                  # Chế độ CLI
-python main.py web                  # Chế độ Web
-python main.py recognize image.jpg  # Nhận dạng ảnh
-python main.py train                # Huấn luyện
-python main.py status               # Trạng thái hệ thống
-python main.py --help               # Xem tất cả lệnh
-```
-
----
-
-## 📊 Tính năng
-
-### ✨ Điểm nổi bật
-- 🧠 **Multimodal Transformer** - Phân tích cả hình ảnh và text
-- 🎨 **Giao diện đẹp** - Rich CLI + Modern Web interface  
-- ⚡ **Hiệu suất cao** - CUDA optimized, real-time inference
-- 📦 **Cài đặt dễ** - UV package manager, 1 lệnh setup
-- 🔧 **Chuyên nghiệp** - Clean code, documentation đầy đủ
-- � **Đa nền tảng** - Linux, Windows, macOS
-- 🔒 **Bảo mật** - Local processing, không upload
-
-### 🎯 Chỉ số hiệu suất
-- **Độ chính xác**: 96.3%
-- **Tốc độ**: 0.15s mỗi ảnh
-- **GPU Memory**: ~3.2GB
-- **Throughput**: 6.7 FPS
-- **Hỗ trợ**: 1000+ loại thuốc
-
----
-
-## �️ Yêu cầu hệ thống
-
-### 💻 Khuyến nghị
-- **OS**: Ubuntu 22.04+ / Windows 10+ / macOS 12+
-- **GPU**: NVIDIA GPU (GTX 1060+, RTX series)
-- **RAM**: 16GB+
-- **Python**: 3.10+
-- **Storage**: 10GB+
-
-### 🔧 Tối thiểu
-- **OS**: Ubuntu 20.04+
-- **RAM**: 8GB
-- **Python**: 3.10+
-- **Storage**: 5GB
-
----
-
-## � Cấu trúc dự án
-
-```
-DoAnDLL/
-├── 🚀 main.py              # Launcher chính
-├── 🏃 run                  # Script chạy nhanh
-├── 📦 pyproject.toml       # Cấu hình UV
-├── 📋 requirements.txt     # Dependencies
-├── 🔧 activate_env.sh      # Kích hoạt môi trường
-│
-├── 📱 apps/               # Ứng dụng
-│   ├── cli/               # Giao diện CLI
-│   └── web/               # Giao diện Web
-├── 🗃️ bin/                # Scripts thực thi
-│   ├── pill-setup         # Cài đặt tự động
-│   ├── pill-cli          # CLI launcher
-│   └── pill-web          # Web launcher
-├── 🧠 core/               # Module chính
-│   ├── data/              # Xử lý dữ liệu
-│   ├── models/            # AI models
-│   ├── training/          # Huấn luyện
-│   └── utils/             # Tiện ích
-├── 📊 data/               # Dữ liệu
-│   ├── raw/               # Dữ liệu thô
-│   └── processed/         # Dữ liệu đã xử lý
-├── 📚 docs/               # Documentation
-├── 📓 notebooks/          # Jupyter notebooks
-├── 🔍 checkpoints/        # Model checkpoints
-└── 📝 logs/               # Log files
-```
-
----
-
-## 🛠️ Development
-
-### 🔧 Môi trường phát triển
-```bash
 # Kích hoạt môi trường
 source .venv/bin/activate
 
-# Cài đặt dev dependencies
-uv pip install pytest pytest-cov black isort flake8 jupyter
-
-# Format code
-black . --line-length 100
-isort . --profile black
-
-# Chạy tests
-pytest tests/ -v --cov=core
-
-# Jupyter notebook
-jupyter lab --port=8888
+# Chạy ứng dụng
+./bin/pill-web    # Web UI (http://localhost:8501)
+./bin/pill-cli    # Terminal UI
 ```
 
-### 📊 Monitoring & Debugging
+### Yêu cầu hệ thống
+- **Python**: 3.10+
+- **RAM**: 8GB+ (16GB recommended)
+- **GPU**: NVIDIA GPU (optional, có thể chạy CPU-only)
+- **OS**: Ubuntu 20.04+, Windows 10+, macOS 12+
+
+## 🚀 Quick Start
+
+### 🖥️ Local Installation (GPU)
 ```bash
-# Xem log
-tail -f logs/app.log
+# Clone repository
+git clone https://github.com/your-username/DoAnDLL.git
+cd DoAnDLL
 
-# Monitor GPU
-nvidia-smi -l 1
+# Auto setup with UV (recommended)
+chmod +x bin/pill-setup
+./bin/pill-setup
 
-# System status
-python main.py status
-
-# Performance profiling
-python -m cProfile main.py recognize image.jpg
+# Manual setup
+uv venv .venv --python 3.10
+source .venv/bin/activate
+uv pip install -r requirements.txt
 ```
 
----
+### ☁️ GitHub Codespaces / CPU-only Installation
+```bash
+# Cài đặt PyTorch CPU trước (nếu cần)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# Cài đặt các package còn lại
+uv pip install -r requirements-cpu.txt
+
+# Hoặc dùng pip nếu không có UV
+pip install -r requirements-cpu.txt
+```
+
+> **Lưu ý:** Sử dụng file `requirements-cpu.txt` cho máy yếu, không có GPU hoặc khi chạy trên Codespaces.
+
+## 💻 Usage
+
+### 🌐 Web Interface
+```bash
+./bin/pill-web
+# Mở http://localhost:8501
+```
+
+### 🖥️ Command Line
+```bash
+./bin/pill-cli                        # Interactive CLI
+python main.py recognize image.jpg     # Direct recognition
+python main.py train                   # Train model
+python main.py --help                  # View all commands
+```
+
+### 📊 Supported Training Methods
+- **Bình thường (PyTorch)**: Standard training
+- **Spark (PySpark)**: Distributed big data processing  
+- **Transformer (HuggingFace)**: State-of-the-art models
+
+## 📋 Features
+
+✨ **Core Features**
+- 🧠 **Multimodal AI**: Combines vision + text analysis
+- 🎨 **Modern UI**: Rich CLI + Beautiful web interface
+- ⚡ **High Performance**: 96.3% accuracy, 0.15s per image
+- 🔧 **Easy Setup**: One-command installation
+- 🌍 **Cross-Platform**: Linux, Windows, macOS support
+
+📊 **Performance Stats**
+- **Accuracy**: 96.3%
+- **Speed**: 0.15s per image
+- **Throughput**: 6.7 FPS
+- **Supported**: 1000+ pill types
+- **GPU Memory**: ~3.2GB
+
+🎯 **Training Options**
+- Standard PyTorch training
+- Distributed Spark processing
+- HuggingFace Transformers integration
+
+## 🛠️ Development
+
+### Environment Setup
+```bash
+source .venv/bin/activate
+uv pip install pytest black isort flake8 jupyter
+```
+
+### Code Quality
+```bash
+black . --line-length 100    # Format code
+isort . --profile black      # Sort imports  
+pytest tests/ -v --cov=core  # Run tests
+```
+
+### Project Structure
+```
+DoAnDLL/
+├── main.py              # Main launcher
+├── apps/                # Applications
+│   ├── cli/            # Terminal interface
+│   └── web/            # Web interface  
+├── core/               # Core modules
+│   ├── data/          # Data processing
+│   ├── models/        # AI models
+│   └── training/      # Training logic
+├── bin/               # Executable scripts
+├── checkpoints/       # Model weights
+└── requirements*.txt  # Dependencies
+```
+
+### CPU-Only Installation
+```bash
+# For machines without GPU
+pip install -r requirements-cpu.txt
+```
+
+## 📋 System Requirements
+
+### 🖥️ Minimum Requirements
+- **OS**: Ubuntu 20.04+ / Windows 10+ / macOS 12+
+- **Python**: 3.10 or higher
+- **RAM**: 8GB+ (16GB recommended)
+- **Storage**: 10GB free space
+- **Package Manager**: UV (recommended) hoặc pip
+
+### 🚀 Installation Methods Priority
+1. **UV + requirements-cpu.txt**: `uv pip install -r requirements-cpu.txt` (CPU-only/Codespaces)
+2. **UV + requirements.txt**: `uv pip install -r requirements.txt` (GPU)
+3. **pip**: `pip install -r requirements-cpu.txt` hoặc `pip install -r requirements.txt`
 
 ## 📚 Documentation
 
-### 📖 Tài liệu chính
-- 📋 [README.md](README.md) - Hướng dẫn cơ bản
-- 🎥 [Demo Guide](docs/DEMO_GUIDE.md) - Hướng dẫn demo
-- 🔧 [Setup Guide](docs/SETUP_GUIDE.md) - Hướng dẫn cài đặt chi tiết
-- 📁 [Project Structure](docs/PROJECT_STRUCTURE.md) - Cấu trúc dự án
+- [📋 README](README.md) - Getting started guide
+- [🎥 Demo Guide](docs/DEMO_GUIDE.md) - Usage examples
+- [⚙️ Setup Guide](docs/SETUP_GUIDE.md) - Detailed installation
+- [🧠 Model Architecture](docs/MODEL_ARCHITECTURE.md) - Technical details
 
-### 🎯 Hướng dẫn chuyên sâu
-- 🧠 [Model Architecture](docs/MODEL_ARCHITECTURE.md) - Kiến trúc model
-- 📊 [Performance Tuning](docs/PERFORMANCE_TUNING.md) - Tối ưu hiệu suất
-- 🔍 [Troubleshooting](docs/TROUBLESHOOTING.md) - Xử lý sự cố
-- 🚀 [Deployment](docs/DEPLOYMENT.md) - Triển khai production
+## 🤝 Contributing
 
-### 📝 API Reference
-- 🔌 [Core API](docs/api/CORE_API.md) - API chính
-- 🌐 [Web API](docs/api/WEB_API.md) - Web API
-- 🖥️ [CLI API](docs/api/CLI_API.md) - CLI API
-
----
-
-## 🤝 Đóng góp
-
-### 🎯 Cách đóng góp
-1. 🍴 Fork repository
-2. 🌿 Tạo feature branch: `git checkout -b feature/amazing-feature`
-3. ✨ Commit changes: `git commit -m 'Add amazing feature'`
-4. 📤 Push to branch: `git push origin feature/amazing-feature`
-5. 🔄 Tạo Pull Request
-
-### 📋 Coding Standards
-- 🐍 Python 3.10+ syntax
-- 📏 Black formatting (100 chars)
-- 🔍 Type hints required
-- 🧪 Unit tests for new features
-- 📝 Docstrings cho functions
-
-### 🐛 Báo lỗi
-- 🔍 [Issues](https://github.com/username/DoAnDLL/issues) - Báo bug/feature request
-- 💬 [Discussions](https://github.com/username/DoAnDLL/discussions) - Thảo luận
-- 📧 [Email](mailto:contact@example.com) - Liên hệ trực tiếp
-
----
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open Pull Request
 
 ## 📄 License
 
-📜 **MIT License** - Xem [LICENSE](LICENSE) file để biết chi tiết
-
-```
-Copyright (c) 2025 DoAnDLL Team
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction...
-```
-
----
-
-## � Version & Updates
-
-| Version | Date | Description |
-|---------|------|-------------|
-| **v2.0.0** | 07/07/2025 21:30 (GMT+7) | 🚀 Major update: UV integration, modern UI |
-| v1.5.0 | Previous | Legacy pip system |
-
-**🕐 Last updated**: 07/07/2025 21:30 (Vietnam Time - GMT+7)
-
----
-
-## �🙏 Credits & Acknowledgments
-
-### 👨‍💻 Team
-- **Nguyễn Văn A** - Project Lead & AI Engineer
-- **Trần Thị B** - Backend Developer
-- **Lê Văn C** - Frontend Developer
-
-### 🏆 Special Thanks
-- 🏛️ **Trường Đại học XYZ** - Hỗ trợ nghiên cứu
-- 🤖 **HuggingFace** - Pretrained models
-- 🔥 **PyTorch Team** - Deep learning framework
-- ⚡ **Astral (UV Team)** - Amazing package manager
-
-### 📊 Datasets
-- 🏥 **CURE Dataset** - Pill recognition dataset
-- 🔬 **Medical Image Database** - Training data
+This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
 <div align="center">
 
-## ⭐ Star History
+**⭐ If this project helps you, please give it a star! ⭐**
 
-[![Star History Chart](https://api.star-history.com/svg?repos=username/DoAnDLL&type=Date)](https://star-history.com/#username/DoAnDLL&Date)
+Made with ❤️ by **DoAnDLL Team**
 
----
-
-**🌟 Nếu project hữu ích, hãy cho chúng tôi 1 Star! 🌟**
-
-Made with ❤️ by **DoAnDLL Team** | Powered by **UV Package Manager**
-
-*📅 Created: 2025 | Last updated: 07/07/2025 21:30 (GMT+7)*
-
-[🏠 Home](.) • [📧 Contact](mailto:contact@example.com) • [🐛 Issues](issues) • [💬 Discussions](discussions) • [📚 Wiki](wiki)
+*🕐 Last updated: July 23, 2025*
 
 </div>
