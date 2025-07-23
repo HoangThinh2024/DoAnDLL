@@ -283,4 +283,3 @@ dev-dependencies = [
 # Điều này đảm bảo các gói torch, torchvision, torchaudio sẽ được lấy từ nguồn chính thức của PyTorch cho CUDA 12.1.
 
 extra-index-url = ["https://download.pytorch.org/whl/cu121"]
-some-other-key = "value"
