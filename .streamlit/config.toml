@@ -1,0 +1,42 @@
+[global]
+# Streamlit configuration for Smart Pill Recognition System
+# Optimized for Ubuntu 22.04 + NVIDIA Quadro 6000 + CUDA 12.8
+
+# Development mode settings (production should set to false)
+developmentMode = false
+
+[server]
+# Server configuration  
+port = 8501
+address = "0.0.0.0"
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+maxUploadSize = 200
+maxMessageSize = 200
+enableWebsocketCompression = false
+
+[browser]
+# Browser settings
+serverAddress = "localhost"
+gatherUsageStats = false
+
+[theme]
+# UI theme configuration
+primaryColor = "#667eea"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+[runner]
+# Runner configuration
+magicEnabled = true
+postScriptGC = true
+fastReruns = true
+enforceSerializableSessionState = false
+
+[logger]
+# Logging configuration
+level = "info"
+messageFormat = "%(asctime)s %(message)s"
