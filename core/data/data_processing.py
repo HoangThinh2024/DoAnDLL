@@ -4,16 +4,30 @@ import pandas as pd
 from PIL import Image
 import torch
 from torch.utils.data import Dataset, DataLoader
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, udf, when, isnan, isnull
-from pyspark.sql.types import StringType, BinaryType, ArrayType, FloatType
 import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from typing import Dict, List, Tuple, Optional, Any
 import io
 import base64
+import json
+from pathlib import Path
 from loguru import logger
+
+try:
+    from pyspark.sql import SparkSession
+    from pyspark.sql.functions import col, udf, when, isnan, isnull
+    from pyspark.sql.types import StringType, BinaryType, ArrayType, FloatType
+    PYSPARK_AVAILABLE = True
+except ImportError:
+    PYSPARK_AVAILABLE = False
+    logger.warning("PySpark not available")
+
+try:
+    from transformers import AutoTokenizer
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
 
 try:
     import cudf
@@ -23,6 +37,310 @@ try:
 except ImportError:
     RAPIDS_AVAILABLE = False
     logger.warning("Rapids not available, using CPU processing")
+
+
+class UnifiedPillDataset(Dataset):
+    """
+    Unified dataset class that works with all training methods
+    """
+    
+    def __init__(self,
+                 data_path: str,
+                 transform: Optional[A.Compose] = None,
+                 tokenizer: Optional[Any] = None,
+                 max_text_length: int = 128,
+                 image_size: int = 224,
+                 split: str = 'train'):
+        
+        self.data_path = Path(data_path)
+        self.transform = transform or self._get_default_transform(image_size)
+        self.tokenizer = tokenizer
+        self.max_text_length = max_text_length
+        self.split = split
+        
+        # Load data
+        self.data = self._load_data()
+        
+        print(f"✅ Dataset loaded: {len(self.data)} samples ({split})")
+    
+    def _get_default_transform(self, image_size: int) -> A.Compose:
+        """Get default image transforms"""
+        return A.Compose([
+            A.Resize(image_size, image_size),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2()
+        ])
+    
+    def _load_data(self) -> List[Dict[str, Any]]:
+        """Load data from various formats"""
+        if self.data_path.is_file():
+            if self.data_path.suffix.lower() == '.json':
+                return self._load_from_json()
+            elif self.data_path.suffix.lower() == '.csv':
+                return self._load_from_csv()
+            elif self.data_path.suffix.lower() == '.parquet':
+                return self._load_from_parquet()
+            else:
+                raise ValueError(f"Unsupported file format: {self.data_path.suffix}")
+        elif self.data_path.is_dir():
+            return self._load_from_directory()
+        else:
+            raise ValueError(f"Invalid data path: {self.data_path}")
+    
+    def _load_from_json(self) -> List[Dict[str, Any]]:
+        """Load data from JSON file"""
+        with open(self.data_path, 'r') as f:
+            data = json.load(f)
+        
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict):
+            # Assume it's split by train/val/test
+            return data.get(self.split, [])
+        else:
+            raise ValueError("Invalid JSON format")
+    
+    def _load_from_csv(self) -> List[Dict[str, Any]]:
+        """Load data from CSV file"""
+        df = pd.read_csv(self.data_path)
+        return df.to_dict('records')
+    
+    def _load_from_parquet(self) -> List[Dict[str, Any]]:
+        """Load data from Parquet file"""
+        df = pd.read_parquet(self.data_path)
+        return df.to_dict('records')
+    
+    def _load_from_directory(self) -> List[Dict[str, Any]]:
+        """Load data from directory structure"""
+        data = []
+        
+        # Assume directory structure: data_path/class_name/images
+        for class_dir in self.data_path.iterdir():
+            if class_dir.is_dir():
+                class_name = class_dir.name
+                class_id = hash(class_name) % 1000  # Simple class ID generation
+                
+                for img_file in class_dir.glob('*.jpg'):
+                    data.append({
+                        'image_path': str(img_file),
+                        'text_imprint': class_name,  # Use class name as text
+                        'label': class_id,
+                        'class_name': class_name
+                    })
+        
+        return data
+    
+    def __len__(self) -> int:
+        return len(self.data)
+    
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        item = self.data[idx]
+        
+        # Load and process image
+        image_path = item.get('image_path', '')
+        if image_path and Path(image_path).exists():
+            image = Image.open(image_path).convert('RGB')
+        elif 'image_data' in item:
+            # Handle base64 encoded images
+            image = self._decode_base64_image(item['image_data'])
+        else:
+            # Create dummy image if path doesn't exist
+            image = Image.new('RGB', (224, 224), color=(128, 128, 128))
+        
+        # Convert PIL to numpy for albumentations
+        image = np.array(image)
+        
+        if self.transform:
+            augmented = self.transform(image=image)
+            image = augmented['image']
+        else:
+            # Basic transform if no transform provided
+            image = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
+        
+        # Process text
+        text = item.get('text_imprint', item.get('text', item.get('cleaned_text', '')))
+        
+        result = {
+            'image': image,
+            'text': text,
+            'label': item.get('label', 0),
+            'image_path': image_path
+        }
+        
+        # Add tokenized text if tokenizer provided
+        if self.tokenizer:
+            encoding = self.tokenizer(
+                text,
+                truncation=True,
+                padding='max_length',
+                max_length=self.max_text_length,
+                return_tensors='pt'
+            )
+            result.update({
+                'input_ids': encoding['input_ids'].squeeze(),
+                'attention_mask': encoding['attention_mask'].squeeze()
+            })
+        
+        return result
+    
+    def _decode_base64_image(self, image_b64: str) -> Image.Image:
+        """Decode base64 image string"""
+        try:
+            image_bytes = base64.b64decode(image_b64)
+            image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+            return image
+        except Exception as e:
+            logger.error(f"Error decoding base64 image: {e}")
+            return Image.new('RGB', (224, 224), color=(128, 128, 128))
+
+
+class DataProcessor:
+    """
+    Unified data processor for all training methods
+    """
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.data_config = config.get('data', {})
+        
+    def prepare_pytorch_data(self, 
+                           data_path: str,
+                           batch_size: int = 32,
+                           num_workers: int = 4) -> Tuple[DataLoader, DataLoader, DataLoader]:
+        """
+        Prepare data for PyTorch training
+        """
+        # Get tokenizer if available
+        tokenizer = None
+        if TRANSFORMERS_AVAILABLE:
+            text_model = self.config.get('model', {}).get('text_encoder', {}).get('model_name', 'bert-base-uncased')
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(text_model)
+            except:
+                tokenizer = None
+        
+        # Get transforms
+        train_transform = get_data_transforms(self.config, "train")
+        val_transform = get_data_transforms(self.config, "val")
+        
+        # Create datasets
+        image_size = self.data_config.get('image_size', 224)
+        max_text_length = self.config.get('model', {}).get('text_encoder', {}).get('max_length', 128)
+        
+        # For simplicity, we'll use the same dataset for all splits
+        full_dataset = UnifiedPillDataset(
+            data_path=data_path,
+            transform=train_transform,
+            tokenizer=tokenizer,
+            max_text_length=max_text_length,
+            image_size=image_size
+        )
+        
+        # Split dataset
+        train_size = int(0.8 * len(full_dataset))
+        val_size = int(0.1 * len(full_dataset))
+        test_size = len(full_dataset) - train_size - val_size
+        
+        train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
+            full_dataset, [train_size, val_size, test_size]
+        )
+        
+        # Update transforms for validation/test
+        val_dataset.dataset.transform = val_transform
+        test_dataset.dataset.transform = val_transform
+        
+        # Create data loaders
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available()
+        )
+        
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available()
+        )
+        
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available()
+        )
+        
+        print(f"✅ PyTorch data prepared: Train={len(train_dataset)}, Val={len(val_dataset)}, Test={len(test_dataset)}")
+        
+        return train_loader, val_loader, test_loader
+    
+    def prepare_spark_data(self, data_path: str) -> Optional[Any]:
+        """Prepare data for Spark training"""
+        if not PYSPARK_AVAILABLE:
+            print("❌ PySpark not available")
+            return None
+        
+        # Use existing SparkDataProcessor for complex operations
+        spark_processor = SparkDataProcessor(self.config)
+        return spark_processor.load_parquet_data(data_path)
+    
+    def prepare_hf_data(self, data_path: str) -> List[Dict[str, Any]]:
+        """Prepare data for HuggingFace Transformers training"""
+        dataset = UnifiedPillDataset(data_path)
+        
+        # Convert to format expected by HuggingFace
+        hf_data = []
+        for item in dataset.data:
+            hf_data.append({
+                'image_path': item.get('image_path', ''),
+                'text': item.get('text_imprint', item.get('text', '')),
+                'label': item.get('label', 0)
+            })
+        
+        print(f"✅ HuggingFace data prepared: {len(hf_data)} samples")
+        return hf_data
+    
+    def create_dummy_dataset(self, 
+                           output_path: str,
+                           num_samples: int = 1000,
+                           num_classes: int = 10) -> str:
+        """Create dummy dataset for testing"""
+        output_path = Path(output_path)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create dummy data
+        dummy_data = []
+        class_names = [f"pill_class_{i}" for i in range(num_classes)]
+        
+        for i in range(num_samples):
+            class_id = i % num_classes
+            class_name = class_names[class_id]
+            
+            dummy_data.append({
+                'image_path': f'/dummy/path/image_{i}.jpg',
+                'text_imprint': f'PILL{i:03d}',
+                'text': f'Pill {class_name} imprint PILL{i:03d}',
+                'label': class_id,
+                'class_name': class_name
+            })
+        
+        # Save as JSON
+        json_path = output_path / 'dataset.json'
+        with open(json_path, 'w') as f:
+            json.dump(dummy_data, f, indent=2)
+        
+        # Save as CSV
+        csv_path = output_path / 'dataset.csv'
+        pd.DataFrame(dummy_data).to_csv(csv_path, index=False)
+        
+        print(f"✅ Dummy dataset created: {json_path}")
+        print(f"📊 Samples: {num_samples}, Classes: {num_classes}")
+        
+        return str(json_path)
 
 
 class SparkDataProcessor:

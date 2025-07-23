@@ -17,18 +17,36 @@ import time
 from collections import defaultdict
 
 from ..models.multimodal_transformer import MultimodalPillTransformer
-from ..data.data_processing import create_dataloaders, SparkDataProcessor
+from ..models.model_registry import ModelRegistry, TrainingMethod
+try:
+    from ..data.data_processing import create_dataloaders, SparkDataProcessor
+except ImportError:
+    print("Warning: data_processing module not found")
+    
 from ..utils.metrics import MetricsCalculator
-from ..utils.utils import (
-    set_seed, 
-    save_checkpoint, 
-    load_checkpoint, 
-    EarlyStopping,
-    optimize_for_quadro_6000,
-    monitor_gpu_usage,
-    clear_gpu_memory,
-    get_gpu_memory_info
-)
+try:
+    from ..utils.utils import (
+        set_seed, 
+        save_checkpoint, 
+        load_checkpoint, 
+        EarlyStopping,
+        optimize_for_quadro_6000,
+        monitor_gpu_usage,
+        clear_gpu_memory,
+        get_gpu_memory_info
+    )
+except ImportError:
+    print("Warning: utils module not found, using fallbacks")
+    
+    def set_seed(seed):
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        
+    def optimize_for_quadro_6000():
+        pass
+        
+    def get_gpu_memory_info():
+        return None
 
 
 class MultimodalTrainer:
@@ -329,8 +347,8 @@ class MultimodalTrainer:
         
         return avg_loss, metrics
     
-    def train(self, train_loader, val_loader, num_epochs: Optional[int] = None):
-        """Complete training loop"""
+    def train(self, train_loader, val_loader, num_epochs: Optional[int] = None, model_name: str = "pytorch_model"):
+        """Complete training loop with model registration"""
         if num_epochs is None:
             num_epochs = self.config["training"]["num_epochs"]
         
@@ -360,7 +378,7 @@ class MultimodalTrainer:
                 f"Epoch {epoch + 1}/{num_epochs} - "
                 f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, "
                 f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, "
-                f"Top-5 Acc: {val_metrics['top5_accuracy']:.4f}"
+                f"Top-5 Acc: {val_metrics.get('top5_accuracy', 0.0):.4f}"
             )
             
             # Log to wandb
@@ -393,7 +411,144 @@ class MultimodalTrainer:
         logger.info(f"Training completed in {total_time:.2f} seconds")
         
         # Final evaluation
-        self._final_evaluation(val_loader)
+        final_metrics = self._final_evaluation(val_loader)
+        final_metrics['training_time'] = total_time
+        final_metrics['dataset_size'] = len(train_loader.dataset)
+        
+        # Register trained model
+        model_id = self.register_trained_model(
+            model_name=model_name,
+            final_metrics=final_metrics,
+            description=f"Enhanced PyTorch multimodal model trained for {epoch + 1} epochs"
+        )
+        
+        return {
+            'model_id': model_id,
+            'final_metrics': final_metrics,
+            'training_time': total_time,
+            'best_epoch': epoch + 1,
+            'total_epochs': epoch + 1
+        }
+
+
+def create_enhanced_pytorch_trainer(config_path: str = None) -> EnhancedMultimodalTrainer:
+    """
+    Create enhanced PyTorch trainer with configuration
+    
+    Args:
+        config_path: Path to configuration file
+        
+    Returns:
+        Configured EnhancedMultimodalTrainer
+    """
+    if config_path:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+    else:
+        # Default configuration
+        config = {
+            "model": {
+                "visual_encoder": {
+                    "model_name": "vit_base_patch16_224",
+                    "pretrained": True,
+                    "output_dim": 768
+                },
+                "text_encoder": {
+                    "model_name": "bert-base-uncased",
+                    "pretrained": True,
+                    "output_dim": 768,
+                    "max_length": 128
+                },
+                "fusion": {
+                    "type": "cross_attention",
+                    "hidden_dim": 768,
+                    "num_attention_heads": 8,
+                    "dropout": 0.1
+                },
+                "classifier": {
+                    "num_classes": 1000,
+                    "hidden_dims": [512, 256],
+                    "dropout": 0.3
+                }
+            },
+            "training": {
+                "batch_size": 32,
+                "learning_rate": 1e-4,
+                "num_epochs": 50,
+                "optimizer": "adamw",
+                "scheduler": "cosine_annealing",
+                "weight_decay": 0.01,
+                "patience": 10,
+                "seed": 42
+            },
+            "hardware": {
+                "gpu": {
+                    "mixed_precision": True
+                }
+            }
+        }
+    
+    return EnhancedMultimodalTrainer(config)
+
+
+def train_pytorch_model(train_loader,
+                       val_loader, 
+                       config_path: str = None,
+                       model_name: str = "pytorch_pill_model") -> Dict[str, Any]:
+    """
+    Complete PyTorch training pipeline
+    
+    Args:
+        train_loader: Training data loader
+        val_loader: Validation data loader
+        config_path: Configuration file path
+        model_name: Name for saved model
+        
+    Returns:
+        Training results
+    """
+    try:
+        # Create trainer
+        trainer = create_enhanced_pytorch_trainer(config_path)
+        
+        # Train model
+        results = trainer.train(train_loader, val_loader, model_name=model_name)
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"PyTorch training pipeline failed: {e}")
+        return {}
+
+
+if __name__ == "__main__":
+    # Example usage
+    print("🧪 Testing Enhanced PyTorch trainer...")
+    
+    config = {
+        "model": {
+            "visual_encoder": {"model_name": "vit_base_patch16_224", "pretrained": True, "output_dim": 768},
+            "text_encoder": {"model_name": "bert-base-uncased", "pretrained": True, "output_dim": 768, "max_length": 128},
+            "fusion": {"type": "cross_attention", "hidden_dim": 768, "num_attention_heads": 8, "dropout": 0.1},
+            "classifier": {"num_classes": 10, "hidden_dims": [128, 64], "dropout": 0.3}
+        },
+        "training": {
+            "batch_size": 8,
+            "learning_rate": 1e-4,
+            "num_epochs": 2,
+            "optimizer": "adamw",
+            "scheduler": "cosine_annealing",
+            "weight_decay": 0.01,
+            "patience": 5,
+            "seed": 42
+        },
+        "hardware": {
+            "gpu": {"mixed_precision": False}  # Disable for testing
+        }
+    }
+    
+    trainer = EnhancedMultimodalTrainer(config)
+    print("✅ Enhanced PyTorch trainer created successfully")
     
     def _save_checkpoint(self, epoch: int, is_best: bool = False):
         """Save model checkpoint"""
@@ -506,3 +661,219 @@ class EarlyStopping:
             self.counter = 0
         
         return self.should_stop
+
+
+class EnhancedMultimodalTrainer:
+    """Enhanced trainer for multimodal pill recognition model with model registry integration"""
+    
+    def __init__(self, config: Dict[str, Any], resume_from: Optional[str] = None):
+        self.config = config
+        
+        # Apply Quadro 6000 specific optimizations
+        optimize_for_quadro_6000()
+        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        # Multi-GPU support with optimization for Quadro 6000
+        if torch.cuda.device_count() > 1:
+            logger.info(f"Using {torch.cuda.device_count()} GPUs")
+            self.multi_gpu = True
+        else:
+            self.multi_gpu = False
+            
+        # Log GPU information
+        if torch.cuda.is_available():
+            gpu_memory_info = get_gpu_memory_info()
+            if gpu_memory_info:
+                logger.info(f"GPU Memory: {gpu_memory_info.get('total', 0):.2f} GB total, {gpu_memory_info.get('free', 0):.2f} GB free")
+            
+        logger.info(f"Using device: {self.device}")
+        
+        # Set random seed for reproducibility
+        set_seed(config.get("training", {}).get("seed", 42))
+        
+        # Initialize mixed precision scaler for Quadro 6000
+        self.use_mixed_precision = config.get("hardware", {}).get("gpu", {}).get("mixed_precision", True)
+        if self.use_mixed_precision and torch.cuda.is_available():
+            self.scaler = GradScaler()
+            logger.info("Mixed precision training enabled for Quadro 6000")
+        else:
+            self.scaler = None
+        
+        # Initialize model registry
+        self.model_registry = ModelRegistry()
+        
+        # Initialize model
+        self.model = self._create_model()
+        
+        # Initialize optimizer and scheduler
+        self._setup_optimizer_and_scheduler()
+        
+        # Initialize metrics calculator
+        self.metrics_calculator = MetricsCalculator(
+            num_classes=config["model"]["classifier"]["num_classes"]
+        )
+        
+        # Initialize metrics tracking
+        self.train_metrics = defaultdict(list)
+        self.val_metrics = defaultdict(list)
+        self.best_val_acc = 0.0
+        self.current_epoch = 0
+        
+        # Initialize early stopping
+        early_stop_config = config.get("training", {})
+        self.early_stopping = EarlyStopping(
+            patience=early_stop_config.get("patience", 10),
+            min_delta=early_stop_config.get("min_delta", 0.001),
+            monitor='val_accuracy'
+        )
+        
+        # Setup checkpointing
+        self.checkpoint_dir = Path(config.get("logging", {}).get("checkpoint_dir", "./checkpoints"))
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize Weights & Biases if configured
+        wandb_config = config.get("logging", {}).get("wandb", {})
+        if wandb_config.get("enabled", False):
+            try:
+                wandb.init(
+                    project=wandb_config.get("project", "pill-recognition"),
+                    entity=wandb_config.get("entity", None),
+                    config=config,
+                    name=wandb_config.get("run_name", None)
+                )
+                self.use_wandb = True
+            except Exception as e:
+                logger.warning(f"Failed to initialize wandb: {e}")
+                self.use_wandb = False
+        else:
+            self.use_wandb = False
+        
+        # Resume from checkpoint if specified
+        if resume_from:
+            self._load_checkpoint(resume_from)
+        
+        logger.info("Enhanced Trainer initialized successfully")
+    
+    def _create_model(self):
+        """Create and initialize model"""
+        model = MultimodalPillTransformer(self.config["model"])
+        
+        if self.multi_gpu:
+            model = nn.DataParallel(model)
+        
+        model.to(self.device)
+        return model
+    
+    def _setup_optimizer_and_scheduler(self):
+        """Setup optimizer and learning rate scheduler"""
+        training_config = self.config["training"]
+        
+        # Optimizer
+        optimizer_name = training_config.get("optimizer", "adamw").lower()
+        lr = training_config["learning_rate"]
+        weight_decay = training_config.get("weight_decay", 0.01)
+        
+        if optimizer_name == "adamw":
+            self.optimizer = optim.AdamW(
+                self.model.parameters(),
+                lr=lr,
+                weight_decay=weight_decay,
+                betas=(0.9, 0.999),
+                eps=1e-8
+            )
+        elif optimizer_name == "adam":
+            self.optimizer = optim.Adam(
+                self.model.parameters(),
+                lr=lr,
+                weight_decay=weight_decay
+            )
+        elif optimizer_name == "sgd":
+            self.optimizer = optim.SGD(
+                self.model.parameters(),
+                lr=lr,
+                weight_decay=weight_decay,
+                momentum=0.9
+            )
+        else:
+            raise ValueError(f"Unknown optimizer: {optimizer_name}")
+        
+        # Scheduler
+        scheduler_name = training_config.get("scheduler", "cosine_annealing").lower()
+        num_epochs = training_config["num_epochs"]
+        
+        if scheduler_name == "cosine_annealing":
+            self.scheduler = CosineAnnealingLR(
+                self.optimizer,
+                T_max=num_epochs,
+                eta_min=lr * 0.01
+            )
+        elif scheduler_name == "step":
+            self.scheduler = StepLR(
+                self.optimizer,
+                step_size=num_epochs // 3,
+                gamma=0.1
+            )
+        elif scheduler_name == "onecycle":
+            self.scheduler = OneCycleLR(
+                self.optimizer,
+                max_lr=lr,
+                epochs=num_epochs,
+                steps_per_epoch=100  # Will be updated with actual value
+            )
+        else:
+            self.scheduler = None
+        
+        logger.info(f"Optimizer: {optimizer_name}, Scheduler: {scheduler_name}")
+    
+    def register_trained_model(self, 
+                             model_name: str, 
+                             final_metrics: Dict[str, float],
+                             description: str = "") -> str:
+        """
+        Register trained model in the model registry
+        
+        Args:
+            model_name: Name for the model
+            final_metrics: Final training metrics
+            description: Model description
+            
+        Returns:
+            Model ID
+        """
+        try:
+            # Prepare model for registration
+            model_state = self.model.module.state_dict() if self.multi_gpu else self.model.state_dict()
+            
+            # Enhanced metrics
+            enhanced_metrics = {
+                'accuracy': final_metrics.get('accuracy', self.best_val_acc),
+                'loss': final_metrics.get('loss', float('inf')),
+                'training_time': final_metrics.get('training_time', 0.0),
+                'dataset_size': final_metrics.get('dataset_size', 0),
+                'best_epoch': self.current_epoch,
+                'final_learning_rate': self.optimizer.param_groups[0]['lr'],
+                'num_parameters': sum(p.numel() for p in self.model.parameters()),
+                'gpu_memory_used': torch.cuda.max_memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
+            }
+            
+            # Register model
+            model_id = self.model_registry.register_model(
+                name=model_name,
+                training_method=TrainingMethod.PYTORCH,
+                model_artifact={'model_state_dict': model_state, 
+                              'optimizer_state_dict': self.optimizer.state_dict(),
+                              'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None},
+                config=self.config,
+                metrics=enhanced_metrics,
+                description=description,
+                tags=["pytorch", "multimodal", "enhanced", "quadro6000"],
+                overwrite=False
+            )
+            
+            logger.info(f"✅ Model registered with ID: {model_id}")
+            return model_id
+            
+        except Exception as e:
+            logger.error(f"Failed to register model: {e}")
+            return ""
