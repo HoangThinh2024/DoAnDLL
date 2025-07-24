@@ -36,7 +36,7 @@ subdirs = ["bottom/Customer", "bottom/Reference", "top/Customer", "top/Reference
 batch_size = 16
 learning_rate = 1e-4
 epochs_phase_2 = 30  # Tăng số epochs để có thể early stop
-patience = 5  # Số epochs chờ đợi để early stop
+patience = 10  # Tăng patience để tránh dừng quá sớm - Số epochs chờ đợi để early stop
 validation_split = 0.2  # Nếu không có tập validation riêng, dùng 20% từ tập train
 
 # Set device to GPU if available
@@ -350,6 +350,10 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
     early_stop_counter = 0
     converged = False
     
+    # Improved early stopping criteria
+    min_improvement = 0.001  # Minimum improvement threshold
+    patience_buffer = 2  # Additional buffer epochs before stopping
+    
     # Dictionaries to store metrics
     train_metrics_history = {
         'loss': [],
@@ -476,16 +480,21 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
         print(f"  Val Loss: {val_metrics['loss']:.4f}, Val Accuracy: {val_metrics['accuracy']:.4f}, Val mAP: {val_metrics['mAP']:.4f}")
         print(f"  Learning rate: {current_lr}")
         
-        # Check if this is the best model by mAP
-        if val_metrics['mAP'] > best_val_map:
+        # Check if this is the best model by mAP (with improved criteria)
+        improvement = val_metrics['mAP'] - best_val_map
+        if improvement > min_improvement:
             best_val_map = val_metrics['mAP']
-            best_model_wts = model.state_dict()
+            best_model_wts = model.state_dict().copy()  # Ensure we make a copy
             best_epoch = epoch
             early_stop_counter = 0
             converged = True
             
-            # Save the best model
-            torch.save({
+            # Ensure save directory exists
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # Save the best model with comprehensive checkpoint
+            best_model_path = os.path.join(save_dir, 'best_model.pth')
+            checkpoint_data = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
@@ -497,24 +506,67 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
                 'val_precision': val_metrics['precision'],
                 'val_recall': val_metrics['recall'],
                 'val_f1': val_metrics['f1'],
-            }, os.path.join(save_dir, 'best_model.pth'))
+                'best_val_mAP': best_val_map,
+                'improvement': improvement,
+                'model_architecture': str(model),
+                'training_config': {
+                    'epochs': epochs,
+                    'patience': patience,
+                    'batch_size': batch_size,
+                    'learning_rate': learning_rate
+                }
+            }
             
-            print(f"  Saved new best model with mAP: {best_val_map:.4f}")
+            try:
+                torch.save(checkpoint_data, best_model_path)
+                print(f"  ✅ Saved new best model with mAP: {best_val_map:.4f} (improvement: +{improvement:.4f})")
+                
+                # Verify the saved model can be loaded
+                test_load = torch.load(best_model_path, map_location='cpu')
+                if 'model_state_dict' in test_load:
+                    print(f"  ✅ Model checkpoint verified successfully")
+                else:
+                    print(f"  ⚠️  Warning: Model checkpoint missing model_state_dict")
+                    
+            except Exception as e:
+                print(f"  ❌ Error saving model checkpoint: {e}")
+                # Try to save to backup location
+                backup_path = os.path.join(save_dir, f'best_model_backup_epoch_{epoch+1}.pth')
+                torch.save(checkpoint_data, backup_path)
+                print(f"  💾 Saved backup checkpoint to: {backup_path}")
         else:
             early_stop_counter += 1
-            print(f"  No improvement. Early stop counter: {early_stop_counter}/{patience}")
+            print(f"  No significant improvement (change: {improvement:.6f}, threshold: {min_improvement:.6f})")
+            print(f"  Early stop counter: {early_stop_counter}/{patience + patience_buffer}")
         
-        # Save checkpoint at regular intervals
+        # Save checkpoint at regular intervals with improved error handling
         if (epoch + 1) % 5 == 0 or epoch == epochs - 1:
-            torch.save({
+            checkpoint_path = os.path.join(save_dir, f'checkpoint_epoch_{epoch+1}.pth')
+            checkpoint_data = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'train_history': train_metrics_history,
                 'val_history': val_metrics_history,
-            }, os.path.join(save_dir, f'checkpoint_epoch_{epoch+1}.pth'))
-            print(f"  Checkpoint saved at epoch {epoch+1}")
+                'current_val_mAP': val_metrics['mAP'],
+                'current_val_accuracy': val_metrics['accuracy'],
+                'best_val_mAP_so_far': best_val_map,
+                'early_stop_counter': early_stop_counter
+            }
+            
+            try:
+                torch.save(checkpoint_data, checkpoint_path)
+                print(f"  ✅ Checkpoint saved at epoch {epoch+1}: {checkpoint_path}")
+                
+                # Verify checkpoint integrity
+                test_load = torch.load(checkpoint_path, map_location='cpu')
+                if 'model_state_dict' not in test_load:
+                    print(f"  ⚠️  Warning: Checkpoint missing model_state_dict!")
+                    
+            except Exception as e:
+                print(f"  ❌ Error saving checkpoint: {e}")
+                # Continue training even if checkpoint fails
         
         # Save epoch-wise metrics to text file
         with open(os.path.join(save_dir, f'epoch_{epoch+1}_metrics.txt'), 'w') as f:
@@ -531,16 +583,71 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
             f.write(f"Learning Rate: {current_lr}\n")
             f.write(f"Epoch Time: {epoch_time:.2f} seconds\n")
         
-        # Check for early stopping
-        if early_stop_counter >= patience:
-            print(f"Early stopping triggered after epoch {epoch+1}")
+        # Check for early stopping with improved criteria
+        effective_patience = patience + patience_buffer
+        if early_stop_counter >= effective_patience:
+            print(f"🛑 Early stopping triggered after epoch {epoch+1}")
+            print(f"   No improvement for {early_stop_counter} epochs (patience: {effective_patience})")
+            print(f"   Best mAP achieved: {best_val_map:.4f} at epoch {best_epoch+1}")
             break
+        elif early_stop_counter >= patience:
+            print(f"⚠️  Warning: {early_stop_counter}/{effective_patience} patience epochs reached")
     
     # Calculate total training time
     total_time = time.time() - start_time
     hours, remainder = divmod(total_time, 3600)
     minutes, seconds = divmod(remainder, 60)
     
+    # Final checkpoint validation and summary
+    print(f"\n🔍 Final Model Checkpoint Validation:")
+    best_model_path = os.path.join(save_dir, 'best_model.pth')
+    
+    if os.path.exists(best_model_path):
+        try:
+            checkpoint = torch.load(best_model_path, map_location='cpu')
+            required_keys = ['model_state_dict', 'optimizer_state_dict', 'val_mAP', 'epoch']
+            missing_keys = [key for key in required_keys if key not in checkpoint]
+            
+            if not missing_keys:
+                print(f"  ✅ Best model checkpoint is valid and complete")
+                print(f"  📊 Contains model from epoch {checkpoint['epoch']+1} with mAP {checkpoint['val_mAP']:.4f}")
+                
+                # Test model loading
+                test_model = MultimodalCNNModel()
+                test_model.load_state_dict(checkpoint['model_state_dict'])
+                print(f"  ✅ Model state dict loads successfully")
+                
+            else:
+                print(f"  ❌ Checkpoint missing required keys: {missing_keys}")
+                
+        except Exception as e:
+            print(f"  ❌ Error validating checkpoint: {e}")
+    else:
+        print(f"  ❌ No best model checkpoint found at {best_model_path}")
+        
+    # Save final training summary
+    training_summary = {
+        'completed_epochs': epoch + 1,
+        'configured_epochs': epochs,
+        'best_epoch': best_epoch + 1,
+        'best_val_mAP': best_val_map,
+        'early_stopped': early_stop_counter >= effective_patience,
+        'final_early_stop_counter': early_stop_counter,
+        'effective_patience': effective_patience,
+        'min_improvement_threshold': min_improvement,
+        'converged': converged,
+        'training_time_seconds': total_time,
+        'checkpoints_saved': {
+            'best_model': os.path.exists(best_model_path),
+            'best_model_path': best_model_path
+        }
+    }
+    
+    summary_path = os.path.join(save_dir, 'training_summary.json')
+    with open(summary_path, 'w') as f:
+        json.dump(training_summary, f, indent=2)
+    print(f"  📋 Training summary saved to: {summary_path}")
+
     # Print summary
     print(f"Training completed in {int(hours)}h {int(minutes)}m {seconds:.2f}s")
     print(f"Best validation mAP: {best_val_map:.4f} achieved at epoch {best_epoch+1}")
@@ -577,10 +684,13 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
         else:
             f.write("- Model did not converge within the configured epochs\n")
             
-        if early_stop_counter >= patience:
+        if early_stop_counter >= effective_patience:
             f.write(f"- Early stopping triggered at epoch {epoch+1}\n")
+            f.write(f"- No improvement for {early_stop_counter} consecutive epochs\n")
+            f.write(f"- Effective patience used: {effective_patience} (base: {patience} + buffer: {patience_buffer})\n")
         else:
-            f.write("- Early stopping not triggered\n\n")
+            f.write("- Early stopping not triggered\n")
+            f.write(f"- Final early stop counter: {early_stop_counter}/{effective_patience}\n")
         
         # Best performance
         f.write("Best Model Performance:\n")
@@ -682,7 +792,7 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
         'best_epoch': best_epoch,
         'best_mAP': best_val_map,
         'training_time': total_time,
-        'early_stopped': early_stop_counter >= patience,
+        'early_stopped': early_stop_counter >= effective_patience,
         'converged': converged,
         'learning_rate_history': lr_history
     }

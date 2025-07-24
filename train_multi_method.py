@@ -91,7 +91,7 @@ class MultiMethodTrainer:
                 "optimizer": "adamw",
                 "scheduler": "cosine_annealing",
                 "weight_decay": 0.01,
-                "patience": 10,
+                "patience": 15,  # Increased patience to prevent early stopping
                 "seed": 42
             },
             "data": {
