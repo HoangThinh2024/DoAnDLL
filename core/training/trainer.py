@@ -499,232 +499,6 @@ class MultimodalTrainer:
         }
 
 
-def create_enhanced_pytorch_trainer(config_path: str = None) -> EnhancedMultimodalTrainer:
-    """
-    Create enhanced PyTorch trainer with configuration
-    
-    Args:
-        config_path: Path to configuration file
-        
-    Returns:
-        Configured EnhancedMultimodalTrainer
-    """
-    if config_path:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-    else:
-        # Default configuration
-        config = {
-            "model": {
-                "visual_encoder": {
-                    "model_name": "vit_base_patch16_224",
-                    "pretrained": True,
-                    "output_dim": 768
-                },
-                "text_encoder": {
-                    "model_name": "bert-base-uncased",
-                    "pretrained": True,
-                    "output_dim": 768,
-                    "max_length": 128
-                },
-                "fusion": {
-                    "type": "cross_attention",
-                    "hidden_dim": 768,
-                    "num_attention_heads": 8,
-                    "dropout": 0.1
-                },
-                "classifier": {
-                    "num_classes": 1000,
-                    "hidden_dims": [512, 256],
-                    "dropout": 0.3
-                }
-            },
-            "training": {
-                "batch_size": 32,
-                "learning_rate": 1e-4,
-                "num_epochs": 50,
-                "optimizer": "adamw",
-                "scheduler": "cosine_annealing",
-                "weight_decay": 0.01,
-                "patience": 15,  # Increased patience to prevent early stopping
-                "seed": 42
-            },
-            "hardware": {
-                "gpu": {
-                    "mixed_precision": True
-                }
-            }
-        }
-    
-    return EnhancedMultimodalTrainer(config)
-
-
-def train_pytorch_model(train_loader,
-                       val_loader, 
-                       config_path: str = None,
-                       model_name: str = "pytorch_pill_model") -> Dict[str, Any]:
-    """
-    Complete PyTorch training pipeline
-    
-    Args:
-        train_loader: Training data loader
-        val_loader: Validation data loader
-        config_path: Configuration file path
-        model_name: Name for saved model
-        
-    Returns:
-        Training results
-    """
-    try:
-        # Create trainer
-        trainer = create_enhanced_pytorch_trainer(config_path)
-        
-        # Train model
-        results = trainer.train(train_loader, val_loader, model_name=model_name)
-        
-        return results
-        
-    except Exception as e:
-        logger.error(f"PyTorch training pipeline failed: {e}")
-        return {}
-
-
-if __name__ == "__main__":
-    # Example usage
-    print("🧪 Testing Enhanced PyTorch trainer...")
-    
-    config = {
-        "model": {
-            "visual_encoder": {"model_name": "vit_base_patch16_224", "pretrained": True, "output_dim": 768},
-            "text_encoder": {"model_name": "bert-base-uncased", "pretrained": True, "output_dim": 768, "max_length": 128},
-            "fusion": {"type": "cross_attention", "hidden_dim": 768, "num_attention_heads": 8, "dropout": 0.1},
-            "classifier": {"num_classes": 10, "hidden_dims": [128, 64], "dropout": 0.3}
-        },
-        "training": {
-            "batch_size": 8,
-            "learning_rate": 1e-4,
-            "num_epochs": 2,
-            "optimizer": "adamw",
-            "scheduler": "cosine_annealing",
-            "weight_decay": 0.01,
-            "patience": 15,  # Increased patience to prevent early stopping
-            "seed": 42
-        },
-        "hardware": {
-            "gpu": {"mixed_precision": False}  # Disable for testing
-        }
-    }
-    
-    trainer = EnhancedMultimodalTrainer(config)
-    print("✅ Enhanced PyTorch trainer created successfully")
-    
-    def _save_checkpoint(self, epoch: int, is_best: bool = False):
-        """Save model checkpoint with validation"""
-        model_state = self.model.module.state_dict() if self.multi_gpu else self.model.state_dict()
-        
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': model_state,
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
-            'best_val_acc': self.best_val_acc,
-            'train_metrics': dict(self.train_metrics),
-            'val_metrics': dict(self.val_metrics),
-            'config': self.config,
-            'model_architecture': str(self.model),
-            'timestamp': time.time()
-        }
-        
-        if is_best:
-            filepath = self.checkpoint_dir / "best_model.pth"
-        else:
-            filepath = self.checkpoint_dir / f"checkpoint_epoch_{epoch + 1}.pth"
-        
-        try:
-            torch.save(checkpoint, filepath)
-            
-            # Validate the saved checkpoint
-            test_load = torch.load(filepath, map_location='cpu')
-            required_keys = ['model_state_dict', 'optimizer_state_dict', 'epoch', 'best_val_acc']
-            missing_keys = [key for key in required_keys if key not in test_load]
-            
-            if missing_keys:
-                logger.warning(f"Checkpoint missing keys: {missing_keys}")
-            else:
-                logger.info(f"✅ Checkpoint saved and validated: {filepath}")
-                
-        except Exception as e:
-            logger.error(f"Error saving checkpoint: {e}")
-            # Try backup location
-            backup_path = self.checkpoint_dir / f"backup_checkpoint_epoch_{epoch + 1}.pth"
-            torch.save(checkpoint, backup_path)
-            logger.info(f"Saved backup checkpoint: {backup_path}")
-    
-    def _load_checkpoint(self, checkpoint_path: str):
-        """Load checkpoint for resuming training"""
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        
-        # Load model state
-        if self.multi_gpu:
-            self.model.module.load_state_dict(checkpoint['model_state_dict'])
-        else:
-            self.model.load_state_dict(checkpoint['model_state_dict'])
-        
-        # Load optimizer state
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        
-        # Load scheduler state
-        if self.scheduler and checkpoint.get('scheduler_state_dict'):
-            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        
-        # Load training state
-        self.current_epoch = checkpoint['epoch'] + 1
-        self.best_val_acc = checkpoint['best_val_acc']
-        self.train_metrics = defaultdict(list, checkpoint.get('train_metrics', {}))
-        self.val_metrics = defaultdict(list, checkpoint.get('val_metrics', {}))
-        
-        logger.info(f"Resumed training from epoch {self.current_epoch}")
-    
-    def _final_evaluation(self, val_loader):
-        """Perform final comprehensive evaluation"""
-        logger.info("Performing final evaluation...")
-        
-        # Load best model
-        best_model_path = self.checkpoint_dir / "best_model.pth"
-        if best_model_path.exists():
-            checkpoint = torch.load(best_model_path, map_location=self.device)
-            if self.multi_gpu:
-                self.model.module.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                self.model.load_state_dict(checkpoint['model_state_dict'])
-        
-        # Detailed evaluation
-        val_loss, val_metrics = self.validate_epoch(val_loader)
-        
-        # Generate and save detailed report
-        self._save_evaluation_report(val_metrics)
-        
-        logger.info("Final evaluation completed")
-    
-    def _save_evaluation_report(self, metrics):
-        """Save detailed evaluation report"""
-        report = {
-            'best_validation_accuracy': self.best_val_acc,
-            'final_metrics': metrics,
-            'training_history': {
-                'train_metrics': dict(self.train_metrics),
-                'val_metrics': dict(self.val_metrics)
-            },
-            'config': self.config
-        }
-        
-        report_path = self.checkpoint_dir / "evaluation_report.json"
-        with open(report_path, 'w') as f:
-            json.dump(report, f, indent=2, default=str)
-        
-        logger.info(f"Evaluation report saved: {report_path}")
-
-
 class EarlyStopping:
     """Early stopping utility"""
     
@@ -964,3 +738,229 @@ class EnhancedMultimodalTrainer:
         except Exception as e:
             logger.error(f"Failed to register model: {e}")
             return ""
+
+
+def create_enhanced_pytorch_trainer(config_path: str = None) -> EnhancedMultimodalTrainer:
+    """
+    Create enhanced PyTorch trainer with configuration
+    
+    Args:
+        config_path: Path to configuration file
+        
+    Returns:
+        Configured EnhancedMultimodalTrainer
+    """
+    if config_path:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+    else:
+        # Default configuration
+        config = {
+            "model": {
+                "visual_encoder": {
+                    "model_name": "vit_base_patch16_224",
+                    "pretrained": True,
+                    "output_dim": 768
+                },
+                "text_encoder": {
+                    "model_name": "bert-base-uncased",
+                    "pretrained": True,
+                    "output_dim": 768,
+                    "max_length": 128
+                },
+                "fusion": {
+                    "type": "cross_attention",
+                    "hidden_dim": 768,
+                    "num_attention_heads": 8,
+                    "dropout": 0.1
+                },
+                "classifier": {
+                    "num_classes": 1000,
+                    "hidden_dims": [512, 256],
+                    "dropout": 0.3
+                }
+            },
+            "training": {
+                "batch_size": 32,
+                "learning_rate": 1e-4,
+                "num_epochs": 50,
+                "optimizer": "adamw",
+                "scheduler": "cosine_annealing",
+                "weight_decay": 0.01,
+                "patience": 15,  # Increased patience to prevent early stopping
+                "seed": 42
+            },
+            "hardware": {
+                "gpu": {
+                    "mixed_precision": True
+                }
+            }
+        }
+    
+    return EnhancedMultimodalTrainer(config)
+
+
+def train_pytorch_model(train_loader,
+                       val_loader, 
+                       config_path: str = None,
+                       model_name: str = "pytorch_pill_model") -> Dict[str, Any]:
+    """
+    Complete PyTorch training pipeline
+    
+    Args:
+        train_loader: Training data loader
+        val_loader: Validation data loader
+        config_path: Configuration file path
+        model_name: Name for saved model
+        
+    Returns:
+        Training results
+    """
+    try:
+        # Create trainer
+        trainer = create_enhanced_pytorch_trainer(config_path)
+        
+        # Train model
+        results = trainer.train(train_loader, val_loader, model_name=model_name)
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"PyTorch training pipeline failed: {e}")
+        return {}
+
+
+if __name__ == "__main__":
+    # Example usage
+    print("🧪 Testing Enhanced PyTorch trainer...")
+    
+    config = {
+        "model": {
+            "visual_encoder": {"model_name": "vit_base_patch16_224", "pretrained": True, "output_dim": 768},
+            "text_encoder": {"model_name": "bert-base-uncased", "pretrained": True, "output_dim": 768, "max_length": 128},
+            "fusion": {"type": "cross_attention", "hidden_dim": 768, "num_attention_heads": 8, "dropout": 0.1},
+            "classifier": {"num_classes": 10, "hidden_dims": [128, 64], "dropout": 0.3}
+        },
+        "training": {
+            "batch_size": 8,
+            "learning_rate": 1e-4,
+            "num_epochs": 2,
+            "optimizer": "adamw",
+            "scheduler": "cosine_annealing",
+            "weight_decay": 0.01,
+            "patience": 15,  # Increased patience to prevent early stopping
+            "seed": 42
+        },
+        "hardware": {
+            "gpu": {"mixed_precision": False}  # Disable for testing
+        }
+    }
+    
+    trainer = EnhancedMultimodalTrainer(config)
+    print("✅ Enhanced PyTorch trainer created successfully")
+    
+    def _save_checkpoint(self, epoch: int, is_best: bool = False):
+        """Save model checkpoint with validation"""
+        model_state = self.model.module.state_dict() if self.multi_gpu else self.model.state_dict()
+        
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model_state,
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
+            'best_val_acc': self.best_val_acc,
+            'train_metrics': dict(self.train_metrics),
+            'val_metrics': dict(self.val_metrics),
+            'config': self.config,
+            'model_architecture': str(self.model),
+            'timestamp': time.time()
+        }
+        
+        if is_best:
+            filepath = self.checkpoint_dir / "best_model.pth"
+        else:
+            filepath = self.checkpoint_dir / f"checkpoint_epoch_{epoch + 1}.pth"
+        
+        try:
+            torch.save(checkpoint, filepath)
+            
+            # Validate the saved checkpoint
+            test_load = torch.load(filepath, map_location='cpu')
+            required_keys = ['model_state_dict', 'optimizer_state_dict', 'epoch', 'best_val_acc']
+            missing_keys = [key for key in required_keys if key not in test_load]
+            
+            if missing_keys:
+                logger.warning(f"Checkpoint missing keys: {missing_keys}")
+            else:
+                logger.info(f"✅ Checkpoint saved and validated: {filepath}")
+                
+        except Exception as e:
+            logger.error(f"Error saving checkpoint: {e}")
+            # Try backup location
+            backup_path = self.checkpoint_dir / f"backup_checkpoint_epoch_{epoch + 1}.pth"
+            torch.save(checkpoint, backup_path)
+            logger.info(f"Saved backup checkpoint: {backup_path}")
+    
+    def _load_checkpoint(self, checkpoint_path: str):
+        """Load checkpoint for resuming training"""
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        
+        # Load model state
+        if self.multi_gpu:
+            self.model.module.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # Load optimizer state
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # Load scheduler state
+        if self.scheduler and checkpoint.get('scheduler_state_dict'):
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        
+        # Load training state
+        self.current_epoch = checkpoint['epoch'] + 1
+        self.best_val_acc = checkpoint['best_val_acc']
+        self.train_metrics = defaultdict(list, checkpoint.get('train_metrics', {}))
+        self.val_metrics = defaultdict(list, checkpoint.get('val_metrics', {}))
+        
+        logger.info(f"Resumed training from epoch {self.current_epoch}")
+    
+    def _final_evaluation(self, val_loader):
+        """Perform final comprehensive evaluation"""
+        logger.info("Performing final evaluation...")
+        
+        # Load best model
+        best_model_path = self.checkpoint_dir / "best_model.pth"
+        if best_model_path.exists():
+            checkpoint = torch.load(best_model_path, map_location=self.device)
+            if self.multi_gpu:
+                self.model.module.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                self.model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # Detailed evaluation
+        val_loss, val_metrics = self.validate_epoch(val_loader)
+        
+        # Generate and save detailed report
+        self._save_evaluation_report(val_metrics)
+        
+        logger.info("Final evaluation completed")
+    
+    def _save_evaluation_report(self, metrics):
+        """Save detailed evaluation report"""
+        report = {
+            'best_validation_accuracy': self.best_val_acc,
+            'final_metrics': metrics,
+            'training_history': {
+                'train_metrics': dict(self.train_metrics),
+                'val_metrics': dict(self.val_metrics)
+            },
+            'config': self.config
+        }
+        
+        report_path = self.checkpoint_dir / "evaluation_report.json"
+        with open(report_path, 'w') as f:
+            json.dump(report, f, indent=2, default=str)
+        
+        logger.info(f"Evaluation report saved: {report_path}")
