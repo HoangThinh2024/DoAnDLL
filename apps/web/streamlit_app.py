@@ -15,8 +15,6 @@ from typing import Dict, Any, List, Tuple
 import time
 import sys
 from pathlib import Path
-import platform
-import psutil
 # Thêm Spark và Transformers
 try:
     import pyspark
@@ -107,33 +105,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 class PillRecognitionWebUI:
-    def run(self):
-        """Entry point cho ứng dụng web, chọn trang theo sidebar hoặc menu"""
-        # Sidebar/menu chọn trang
-        menu = ["🎯 Nhận dạng", "🏋️ Training", "📊 Analytics", "⚙️ Settings"]
-        selected = st.sidebar.radio("Chọn trang:", menu, index=0)
-        self.show_header()
-        self.show_sidebar()
-        if selected == "🎯 Nhận dạng":
-            self.show_recognition_page()
-        elif selected == "🏋️ Training":
-            self.show_training_page()
-        elif selected == "📊 Analytics":
-            self.show_analytics_page()
-        elif selected == "⚙️ Settings":
-            self.show_settings_page()
-        # Footer
-        st.markdown("---")
-        st.markdown(
-            """
-            <div style='text-align: center; color: #666; padding: 1rem;'>
-                💊 Smart Pill Recognition System v1.0.0 | 
-                Tối ưu hóa cho Ubuntu 22.04 + NVIDIA Quadro 6000 + CUDA 12.8 | 
-                Made with ❤️ by DoAnDLL Team
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
     """🌐 Lớp chính cho Web UI nhận dạng viên thuốc"""
     
     def __init__(self):
@@ -177,29 +148,23 @@ class PillRecognitionWebUI:
         """, unsafe_allow_html=True)
     
     def show_sidebar(self):
-        """Hiển thị sidebar với thông tin hệ thống chi tiết"""
+        """Hiển thị sidebar với thông tin hệ thống"""
         with st.sidebar:
             st.markdown("## 🖥️ Thông tin hệ thống")
-
+            
             device_info = st.session_state.device_info
-
-            # OS, Python, CPU, RAM
-            st.markdown(f"**OS:** {platform.system()} {platform.release()}")
-            st.markdown(f"**Python:** {platform.python_version()}")
-            st.markdown(f"**CPU:** {platform.processor() or platform.machine()}")
-            st.markdown(f"**RAM:** {round(psutil.virtual_memory().total / (1024**3), 2)} GB")
-
+            
             # Device status
             if device_info.get("cuda_available"):
                 st.success(f"🚀 GPU: {device_info.get('gpu_name', 'Unknown')}")
-                st.info(f"💾 GPU Memory: {device_info.get('gpu_memory_gb', 'Unknown')}")
+                st.info(f"💾 Memory: {device_info.get('gpu_memory_gb', 'Unknown')}")
                 st.info(f"⚡ CUDA: {device_info.get('cuda_version', 'Unknown')}")
             else:
                 st.warning("💻 CPU Mode")
                 st.warning("⚠️ CUDA không khả dụng")
-
+            
             st.markdown("---")
-
+            
             # Model status
             st.markdown("## 🧠 Model Status")
             if st.session_state.model is None:
@@ -209,9 +174,9 @@ class PillRecognitionWebUI:
             else:
                 st.success("✅ Model đã sẵn sàng")
                 st.info("🎯 Multimodal Transformer")
-
+            
             st.markdown("---")
-
+            
             # Quick stats
             st.markdown("## 📊 Quick Stats")
             col1, col2 = st.columns(2)
@@ -219,9 +184,9 @@ class PillRecognitionWebUI:
                 st.metric("Accuracy", "96.3%", "2.1%")
             with col2:
                 st.metric("Speed", "0.15s", "-0.03s")
-
+            
             st.markdown("---")
-
+            
             # Useful links
             st.markdown("## 🔗 Useful Links")
             st.markdown("- [📖 Documentation]()")
@@ -708,11 +673,7 @@ class PillRecognitionWebUI:
                     self.start_training(epochs, batch_size, learning_rate, model_type, train_method)
     
     def start_training(self, epochs, batch_size, learning_rate, model_type, train_method):
-        """Thực hiện training thực tế với core/training/trainer.py cho cả 3 loại model"""
-        import os
-        import importlib.util
-        import sys
-        import traceback
+        """Bắt đầu quá trình training với lựa chọn phương pháp, giữ trạng thái qua nhiều epoch"""
         if 'training_epoch' not in st.session_state:
             st.session_state.training_epoch = 0
         if 'training_metrics' not in st.session_state:
@@ -723,82 +684,63 @@ class PillRecognitionWebUI:
         st.info(f"📊 Config: Batch size={batch_size}, LR={learning_rate}, Model={model_type}, Phương pháp={train_method}")
 
         progress_placeholder = st.empty()
-        current_metrics = st.empty()
 
-        # Chuẩn bị đường dẫn và import trainer
-        trainer_path = os.path.join(str(self.project_root), "core", "training", "trainer.py")
-        spec = importlib.util.spec_from_file_location("trainer", trainer_path)
-        trainer = importlib.util.module_from_spec(spec)
-        sys.modules["trainer"] = trainer
-        try:
-            spec.loader.exec_module(trainer)
-        except Exception as e:
-            st.session_state.training_active = False
-            st.error(f"Không thể import trainer.py: {e}\n{traceback.format_exc()}")
-            return
+        with progress_placeholder.container():
+            st.markdown(f"### 🔄 Training Progress ({train_method})")
+            epoch_progress = st.progress(st.session_state.training_epoch / epochs)
+            current_metrics = st.empty()
 
-        # Xác định loại model
-        model_map = {
-            "Multimodal Transformer": "multimodal_transformer",
-            "Vision Only": "vision_only",
-            "Text Only": "text_only"
-        }
-        model_key = model_map.get(model_type, "multimodal_transformer")
+            # Training simulation cho từng phương pháp
+            for epoch in range(st.session_state.training_epoch, min(epochs, st.session_state.training_epoch + 5)):
+                epoch_progress.progress((epoch + 1) / epochs)
 
-        # Đường dẫn dataset (có thể lấy từ config hoặc mặc định)
-        dataset_path = "Dataset_BigData/CURE_dataset"
-        checkpoints_dir = os.path.join(str(self.project_root), "checkpoints")
-        os.makedirs(checkpoints_dir, exist_ok=True)
-        checkpoint_path = os.path.join(checkpoints_dir, f"best_model_{model_key}_{train_method.replace(' ', '_')}.pth")
-
-        # Gọi hàm train_model thực tế hoặc train_model_spark nếu là Spark
-        try:
-            with progress_placeholder.container():
-                st.markdown(f"### 🔄 Training Progress ({train_method})")
-                progress_bar = st.progress(0)
-                def streamlit_callback(epoch, total_epochs, train_loss, val_loss, train_acc, val_acc):
-                    percent = (epoch + 1) / total_epochs
-                    progress_bar.progress(percent)
-                    current_metrics.markdown(f"""
-                    **Epoch {epoch + 1}/{total_epochs} ({train_method})**
-                    - Train Loss: {train_loss:.3f}
-                    - Val Loss: {val_loss:.3f} 
-                    - Train Acc: {train_acc:.3f}
-                    - Val Acc: {val_acc:.3f}
-                    """)
-                # Nếu là Spark (PySpark) thì gọi train_model_spark nếu có
-                if train_method == "Spark (PySpark)" and hasattr(trainer, "train_model_spark"):
-                    trainer.train_model_spark(
-                        model_type=model_key,
-                        dataset_path=dataset_path,
-                        epochs=epochs,
-                        batch_size=batch_size,
-                        learning_rate=learning_rate,
-                        checkpoint_path=checkpoint_path,
-                        progress_callback=streamlit_callback
-                    )
+                # Simulate metrics
+                if train_method == "Bình thường (PyTorch)":
+                    train_loss = 2.5 - (epoch * 0.3) + np.random.normal(0, 0.1)
+                    val_loss = 2.3 - (epoch * 0.25) + np.random.normal(0, 0.1)
+                    train_acc = 0.3 + (epoch * 0.15) + np.random.normal(0, 0.02)
+                    val_acc = 0.35 + (epoch * 0.13) + np.random.normal(0, 0.02)
+                elif train_method == "Spark (PySpark)":
+                    train_loss = 2.2 - (epoch * 0.28) + np.random.normal(0, 0.12)
+                    val_loss = 2.1 - (epoch * 0.22) + np.random.normal(0, 0.12)
+                    train_acc = 0.32 + (epoch * 0.16) + np.random.normal(0, 0.03)
+                    val_acc = 0.36 + (epoch * 0.14) + np.random.normal(0, 0.03)
+                elif train_method == "Transformer (HuggingFace)":
+                    train_loss = 2.0 - (epoch * 0.25) + np.random.normal(0, 0.15)
+                    val_loss = 1.9 - (epoch * 0.20) + np.random.normal(0, 0.15)
+                    train_acc = 0.35 + (epoch * 0.18) + np.random.normal(0, 0.04)
+                    val_acc = 0.38 + (epoch * 0.15) + np.random.normal(0, 0.04)
                 else:
-                    trainer.train_model(
-                        model_type=model_key,
-                        dataset_path=dataset_path,
-                        epochs=epochs,
-                        batch_size=batch_size,
-                        learning_rate=learning_rate,
-                        checkpoint_path=checkpoint_path,
-                        progress_callback=streamlit_callback
-                    )
-        except Exception as e:
-            st.session_state.training_active = False
-            st.error(f"Lỗi khi training: {e}\n{traceback.format_exc()}")
-            return
+                    train_loss = 2.5
+                    val_loss = 2.3
+                    train_acc = 0.3
+                    val_acc = 0.35
 
-        st.session_state.training_epoch = epochs
-        st.session_state.training_active = False
-        st.success(f"✅ Training hoàn thành với phương pháp: {train_method}!")
-        st.session_state.training_epoch = 0
-        st.session_state.training_metrics = []
-        st.session_state.model_checkpoint = checkpoint_path
-        st.info(f"💾 Model checkpoint đã được lưu: {checkpoint_path}")
+                st.session_state.training_metrics.append({
+                    "epoch": epoch + 1,
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    "train_acc": train_acc,
+                    "val_acc": val_acc,
+                    "method": train_method
+                })
+
+                current_metrics.markdown(f"""
+                **Epoch {epoch + 1}/{epochs} ({train_method})**
+                - Train Loss: {train_loss:.3f}
+                - Val Loss: {val_loss:.3f} 
+                - Train Acc: {train_acc:.3f}
+                - Val Acc: {val_acc:.3f}
+                """)
+                time.sleep(1)
+
+            st.session_state.training_epoch = epoch + 1
+            if st.session_state.training_epoch >= epochs:
+                st.session_state.training_active = False
+                st.success(f"✅ Training hoàn thành với phương pháp: {train_method}!")
+                st.session_state.training_epoch = 0
+                st.session_state.training_metrics = []
+            # Không rerun để giữ trạng thái
     
     def show_analytics_page(self):
         """Trang phân tích và thống kê, so sánh hiệu năng các phương pháp huấn luyện"""
@@ -996,212 +938,193 @@ class PillRecognitionWebUI:
         """Trang cài đặt hệ thống và theme"""
         st.markdown("## ⚙️ Cài đặt Hệ thống")
 
-        # System information
-        st.markdown("### 🖥️ Thông tin Hệ thống")
+        col1, col2 = st.columns([2, 1])
 
-        device_info = st.session_state.device_info
+        with col1:
+            # Theme settings
+            st.markdown("### 🎨 Theme Settings")
+            theme = st.radio("Chọn theme:", ["Light", "Dark", "Auto"], index=2)
+            if 'theme' not in st.session_state:
+                st.session_state['theme'] = theme
+            if theme != st.session_state['theme']:
+                st.session_state['theme'] = theme
+                st.experimental_set_query_params(theme=theme)
+                st.success(f"Đã chuyển theme sang: {theme}")
+            # Apply theme (simple CSS switch)
+            if theme == "Dark":
+                st.markdown("""
+                <style>
+                body, .main-header, .sidebar .sidebar-content {
+                    background: #222 !important;
+                    color: #eee !important;
+                }
+                .metric-card, .result-section {
+                    background: #333 !important;
+                    color: #eee !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+            elif theme == "Light":
+                st.markdown("""
+                <style>
+                body, .main-header, .sidebar .sidebar-content {
+                    background: #fafafa !important;
+                    color: #222 !important;
+                }
+                .metric-card, .result-section {
+                    background: #fff !important;
+                    color: #222 !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
 
-        system_info = {
-            "OS": "Ubuntu 22.04 LTS",
-            "Python": f"{sys.version.split()[0]}",
-            "PyTorch": device_info.get("pytorch_version", "Unknown"),
-            "CUDA": device_info.get("cuda_version", "N/A"),
-            "GPU": device_info.get("gpu_name", "CPU Only"),
-            "GPU Memory": device_info.get("gpu_memory_gb", "N/A")
-        }
-
-        for key, value in system_info.items():
-            st.metric(key, value)
-
-        # System health check
-        st.markdown("### 🔍 System Health")
-
-        if st.button("🔄 Kiểm tra hệ thống"):
-            with st.spinner("Đang kiểm tra..."):
-                time.sleep(2)
-
-            health_status = {
-                "GPU Status": "✅ Available" if device_info.get("cuda_available") else "❌ Not Available",
-                "Model Status": "✅ Loaded" if st.session_state.model else "⚠️ Not Loaded",
-                "Dataset": "✅ Found" if (PROJECT_ROOT / "Dataset_BigData").exists() else "❌ Missing",
-                "Dependencies": "✅ OK",
-                "Memory": "✅ Sufficient"
+            # Model settings
+            st.markdown("### 🧠 Cài đặt Model")
+            model_config = {
+                "model_type": st.selectbox(
+                    "Loại model",
+                    ["Multimodal Transformer", "Vision Transformer", "ResNet-50"],
+                    index=0
+                ),
+                "checkpoint_path": st.text_input(
+                    "Đường dẫn checkpoint",
+                    value="checkpoints/best_model.pth"
+                ),
+                "device": st.selectbox(
+                    "Device",
+                    ["auto", "cuda", "cpu"],
+                    index=0
+                ),
+                "batch_size": st.slider("Batch size cho inference", 1, 32, 8),
+                "confidence_threshold": st.slider("Ngưỡng độ tin cậy", 0.1, 1.0, 0.8)
             }
 
-            for key, value in health_status.items():
-                if "✅" in value:
-                    st.success(f"{key}: {value}")
-                elif "⚠️" in value:
-                    st.warning(f"{key}: {value}")
-                else:
-                    st.error(f"{key}: {value}")
-
-        # Quick actions
-        st.markdown("### ⚡ Quick Actions")
-
-        if st.button("🔄 Reload Model"):
-            if st.session_state.model:
-                st.info("🔄 Đang reload model...")
-                time.sleep(1)
-                st.success("✅ Model đã được reload!")
-            else:
-                self.load_model()
-
-        if st.button("🧹 Clear Cache"):
-            if 'model' in st.session_state:
-                del st.session_state['model']
-            st.success("✅ Cache đã được xóa!")
-            st.rerun()
-
-        if st.button("📊 System Monitor"):
-            st.info("🔄 Đang mở system monitor...")
-            # This would open a real-time monitoring dashboard
-
-        # Theme settings
-        st.markdown("### 🎨 Theme Settings")
-        theme = st.radio("Chọn theme:", ["Light", "Dark", "Auto"], index=2)
-        if 'theme' not in st.session_state:
-            st.session_state['theme'] = theme
-        if theme != st.session_state['theme']:
-            st.session_state['theme'] = theme
-            st.experimental_set_query_params(theme=theme)
-            st.success(f"Đã chuyển theme sang: {theme}")
-        # Apply theme (simple CSS switch)
-        if theme == "Dark":
-            st.markdown("""
-            <style>
-            body, .main-header, .sidebar .sidebar-content {
-                background: #222 !important;
-                color: #eee !important;
+            # Data settings
+            st.markdown("### 📁 Cài đặt Dữ liệu")
+            data_config = {
+                "dataset_path": st.text_input(
+                    "Đường dẫn dataset",
+                    value="Dataset_BigData/CURE_dataset"
+                ),
+                "image_size": st.selectbox(
+                    "Kích thước ảnh",
+                    [224, 256, 384, 512],
+                    index=0
+                ),
+                "preprocessing": st.multiselect(
+                    "Preprocessing steps",
+                    ["Resize", "Normalize", "Center Crop", "Random Flip"],
+                    default=["Resize", "Normalize", "Center Crop"]
+                )
             }
-            .metric-card, .result-section {
-                background: #333 !important;
-                color: #eee !important;
+
+            # Performance settings
+            st.markdown("### ⚡ Cài đặt Performance")
+            perf_config = {
+                "num_workers": st.slider("Số workers cho DataLoader", 0, 8, 4),
+                "pin_memory": st.checkbox("Pin memory", value=True),
+                "mixed_precision": st.checkbox("Mixed precision", value=True),
+                "compile_model": st.checkbox("Compile model (PyTorch 2.0)", value=False)
             }
-            </style>
-            """, unsafe_allow_html=True)
-        elif theme == "Light":
-            st.markdown("""
-            <style>
-            body, .main-header, .sidebar .sidebar-content {
-                background: #fafafa !important;
-                color: #222 !important;
-            }
-            .metric-card, .result-section {
-                background: #fff !important;
-                color: #222 !important;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-        # Hướng dẫn đổi theme thực sự
-        st.info("""
-            ⚠️ Để đổi theme thực sự (Light/Dark/Auto) cho toàn bộ ứng dụng, hãy chỉnh file `.streamlit/config.toml`:
-            
-            ```toml
-            [theme]
-            base="light"  # hoặc "dark" hoặc "auto"
-            ```
-            Sau đó reload lại ứng dụng Streamlit.
-        """)
 
-        # Model settings
-        st.markdown("### 🧠 Cài đặt Model")
-        model_config = {
-            "model_type": st.selectbox(
-                "Loại model",
-                ["Multimodal Transformer", "Vision Transformer", "ResNet-50"],
-                index=0
-            ),
-            "checkpoint_path": st.text_input(
-                "Đường dẫn checkpoint",
-                value="checkpoints/best_model.pth"
-            ),
-            "device": st.selectbox(
-                "Device",
-                ["auto", "cuda", "cpu"],
-                index=0
-            ),
-            "batch_size": st.slider("Batch size cho inference", 1, 32, 8),
-            "confidence_threshold": st.slider("Ngưỡng độ tin cậy", 0.1, 1.0, 0.8)
-        }
-
-        # Data settings
-        st.markdown("### 📁 Cài đặt Dữ liệu")
-        data_config = {
-            "dataset_path": st.text_input(
-                "Đường dẫn dataset",
-                value="Dataset_BigData/CURE_dataset"
-            ),
-            "image_size": st.selectbox(
-                "Kích thước ảnh",
-                [224, 256, 384, 512],
-                index=0
-            ),
-            "preprocessing": st.multiselect(
-                "Preprocessing steps",
-                ["Resize", "Normalize", "Center Crop", "Random Flip"],
-                default=["Resize", "Normalize", "Center Crop"]
-            )
-        }
-
-        # Performance settings
-        st.markdown("### ⚡ Cài đặt Performance")
-        perf_config = {
-            "num_workers": st.slider("Số workers cho DataLoader", 0, 8, 4),
-            "pin_memory": st.checkbox("Pin memory", value=True),
-            "mixed_precision": st.checkbox("Mixed precision", value=True),
-            "compile_model": st.checkbox("Compile model (PyTorch 2.0)", value=False)
-        }
-
-        # Save settings button
-        if st.button("💾 Lưu cài đặt", type="primary"):
-            config = {**model_config, **data_config, **perf_config, "theme": theme}
-            st.success("✅ Đã lưu cài đặt thành công!")
-            st.json(config)
+            # Save settings button
+            if st.button("💾 Lưu cài đặt", type="primary"):
+                config = {**model_config, **data_config, **perf_config, "theme": theme}
+                st.success("✅ Đã lưu cài đặt thành công!")
+                st.json(config)
         
         with col2:
-            st.markdown("### 📊 Training Status")
-
-            # Only show training status if training_active is in session_state
-            if 'training_active' not in st.session_state:
-                st.session_state.training_active = False
-
-            if st.session_state.training_active:
-                st.success("🟢 Training đang chạy")
-
-                # Mock training progress
-                current_epoch = st.empty()
-                progress_bar = st.progress(0)
-
-                # Simulated training metrics
-                loss_chart = st.empty()
-                acc_chart = st.empty()
-
-                # Stop button
-                if st.button("🛑 Dừng Training"):
-                    st.session_state.training_active = False
-                    st.rerun()
-                # Only show 'continue training' if all required variables are in session_state
-                required_vars = ['training_epoch', 'epochs', 'batch_size', 'learning_rate', 'model_type', 'train_method']
-                if all(var in st.session_state for var in required_vars):
-                    if st.session_state.training_epoch < st.session_state.epochs:
-                        if st.button("▶️ Tiếp tục Training"):
-                            self.start_training(
-                                st.session_state.epochs,
-                                st.session_state.batch_size,
-                                st.session_state.learning_rate,
-                                st.session_state.model_type,
-                                st.session_state.train_method
-                            )
-            else:
-                st.info("⏸️ Không có training nào đang chạy")
-
-                # Dataset info
-                st.markdown("#### 📁 Dataset Info")
-                st.metric("Train images", "12,678")
-                st.metric("Val images", "2,115")
-                st.metric("Test images", "1,054")
-                st.metric("Classes", "156")
+            # System information
+            st.markdown("### 🖥️ Thông tin Hệ thống")
+            
+            device_info = st.session_state.device_info
+            
+            system_info = {
+                "OS": "Ubuntu 22.04 LTS",
+                "Python": f"{sys.version.split()[0]}",
+                "PyTorch": device_info.get("pytorch_version", "Unknown"),
+                "CUDA": device_info.get("cuda_version", "N/A"),
+                "GPU": device_info.get("gpu_name", "CPU Only"),
+                "GPU Memory": device_info.get("gpu_memory_gb", "N/A")
+            }
+            
+            for key, value in system_info.items():
+                st.metric(key, value)
+            
+            # System health check
+            st.markdown("### 🔍 System Health")
+            
+            if st.button("🔄 Kiểm tra hệ thống"):
+                with st.spinner("Đang kiểm tra..."):
+                    time.sleep(2)
+                
+                health_status = {
+                    "GPU Status": "✅ Available" if device_info.get("cuda_available") else "❌ Not Available",
+                    "Model Status": "✅ Loaded" if st.session_state.model else "⚠️ Not Loaded",
+                    "Dataset": "✅ Found" if (PROJECT_ROOT / "Dataset_BigData").exists() else "❌ Missing",
+                    "Dependencies": "✅ OK",
+                    "Memory": "✅ Sufficient"
+                }
+                
+                for key, value in health_status.items():
+                    if "✅" in value:
+                        st.success(f"{key}: {value}")
+                    elif "⚠️" in value:
+                        st.warning(f"{key}: {value}")
+                    else:
+                        st.error(f"{key}: {value}")
+            
+            # Quick actions
+            st.markdown("### ⚡ Quick Actions")
+            
+            if st.button("🔄 Reload Model"):
+                if st.session_state.model:
+                    st.info("🔄 Đang reload model...")
+                    time.sleep(1)
+                    st.success("✅ Model đã được reload!")
+                else:
+                    self.load_model()
+            
+            if st.button("🧹 Clear Cache"):
+                if 'model' in st.session_state:
+                    del st.session_state['model']
+                st.success("✅ Cache đã được xóa!")
+                st.rerun()
+            
+            if st.button("📊 System Monitor"):
+                st.info("🔄 Đang mở system monitor...")
+                # This would open a real-time monitoring dashboard
+    
+    def run(self):
+        """Chạy ứng dụng web chính"""
+        
+        # Show header
+        self.show_header()
+        
+        # Show sidebar
+        self.show_sidebar()
+        
+        # Main navigation menu
+        selected = option_menu(
+            menu_title=None,
+            options=["🎯 Nhận dạng", "🏋️ Training", "📊 Analytics", "⚙️ Settings"],
+            icons=["camera", "cpu", "graph-up", "gear"],
+            menu_icon="cast",
+            default_index=0,
+            orientation="horizontal",
+            styles={
+                "container": {"padding": "0!important", "background-color": "#fafafa"},
+                "icon": {"color": "orange", "font-size": "18px"},
+                "nav-link": {
+                    "font-size": "16px",
+                    "text-align": "center",
+                    "margin": "0px",
+                    "--hover-color": "#eee"
+                },
+                "nav-link-selected": {"background-color": "#667eea"},
+            }
+        )
+        
         # Show selected page
         if selected == "🎯 Nhận dạng":
             self.show_recognition_page()
