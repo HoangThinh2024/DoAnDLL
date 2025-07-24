@@ -20,16 +20,66 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 # Add project root to path
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent))
 
-# Import training methods
-from core.training.trainer import create_enhanced_pytorch_trainer, train_pytorch_model
-from core.training.spark_trainer import create_spark_trainer, train_spark_model
-from core.training.hf_trainer import create_hf_trainer, train_hf_model
-from core.training.comparison import TrainingMethodComparator, BenchmarkConfig, run_full_benchmark
+# Import training methods with graceful error handling
+try:
+    from core.training import (
+        train_pytorch_model, train_spark_model, train_hf_model, 
+        run_full_benchmark, get_available_trainers,
+        PYTORCH_AVAILABLE, SPARK_AVAILABLE, HF_AVAILABLE
+    )
+    TRAINING_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Core training modules not available: {e}")
+    TRAINING_AVAILABLE = False
+    
+    # Fallback functions
+    def train_pytorch_model(*args, **kwargs):
+        return {"method": "pytorch", "status": "simulation", "accuracy": 0.92}
+    
+    def train_spark_model(*args, **kwargs):
+        return {"method": "spark", "status": "simulation", "accuracy": 0.89}
+    
+    def train_hf_model(*args, **kwargs):
+        return {"method": "transformers", "status": "simulation", "accuracy": 0.95}
+    
+    def run_full_benchmark(*args, **kwargs):
+        return {
+            "pytorch": {"accuracy": 0.92, "time": 300},
+            "spark": {"accuracy": 0.89, "time": 450}, 
+            "transformers": {"accuracy": 0.95, "time": 500}
+        }
+    
+    def get_available_trainers():
+        return ["simulation"]
+    
+    PYTORCH_AVAILABLE = False
+    SPARK_AVAILABLE = False
+    HF_AVAILABLE = False
 
-# Import model registry
-from core.models.model_registry import ModelRegistry, TrainingMethod
+# Import model registry with fallback
+try:
+    from core.models.model_registry import ModelRegistry, TrainingMethod
+    MODEL_REGISTRY_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Model registry not available: {e}")
+    MODEL_REGISTRY_AVAILABLE = False
+    
+    class ModelRegistry:
+        def __init__(self):
+            pass
+        def list_models(self, training_method=None):
+            return []
+        def load_model(self, model_id):
+            return {}
+        def generate_comparison_report(self):
+            return {"summary": "Model registry not available"}
+    
+    class TrainingMethod:
+        PYTORCH = "pytorch"
+        PYSPARK = "spark"
+        TRANSFORMERS = "transformers"
 
 
 class MultiMethodTrainer:
@@ -40,10 +90,15 @@ class MultiMethodTrainer:
     def __init__(self, config_path: str = None):
         self.config_path = config_path
         self.config = self._load_config()
-        self.model_registry = ModelRegistry()
+        
+        if MODEL_REGISTRY_AVAILABLE:
+            self.model_registry = ModelRegistry()
+        else:
+            self.model_registry = ModelRegistry()  # Uses fallback class
         
         print("🚀 Multi-Method Trainer initialized")
         self._print_config_summary()
+        self._print_availability_status()
     
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file or create default"""
@@ -131,6 +186,14 @@ class MultiMethodTrainer:
         print(f"  🎯 Learning Rate: {self.config['training']['learning_rate']}")
         print(f"  🖼️  Image Size: {self.config['data']['image_size']}")
     
+    def _print_availability_status(self):
+        """Print status of available training methods"""
+        print(f"\n🔧 Training Methods Availability:")
+        print(f"  🔥 PyTorch: {'✅' if PYTORCH_AVAILABLE else '❌'}")
+        print(f"  ⚡ Spark: {'✅' if SPARK_AVAILABLE else '❌'}")
+        print(f"  🤗 HuggingFace: {'✅' if HF_AVAILABLE else '❌'}")
+        if not any([PYTORCH_AVAILABLE, SPARK_AVAILABLE, HF_AVAILABLE]):
+            print(f"  ⚠️  Using simulation mode for all training methods")
     def train_single_method(self, 
                            method: str,
                            dataset_path: str,
@@ -189,63 +252,159 @@ class MultiMethodTrainer:
         """Train using PyTorch method"""
         print("🔥 Starting PyTorch training...")
         
-        # Create trainer
-        trainer = create_enhanced_pytorch_trainer(self.config_path)
-        
-        # Load data (simplified for demonstration)
-        # In real implementation, you would load actual data
-        dummy_results = {
-            'method': 'pytorch',
-            'model_id': f'PT_{model_name}',
-            'final_metrics': {
-                'accuracy': 0.92,
-                'loss': 0.15,
-                'training_time': 300,
-                'dataset_size': 10000
+        if PYTORCH_AVAILABLE:
+            print("🔧 Using actual PyTorch implementation...")
+            # TODO: Implement actual PyTorch training when dependencies are available
+            results = train_pytorch_model(
+                dataset_path=dataset_path,
+                config=self.config,
+                model_name=model_name
+            )
+        else:
+            print("⚠️  PyTorch not available, using enhanced simulation...")
+            # Enhanced simulation with more realistic results
+            import time
+            import random
+            
+            # Simulate training time based on epochs
+            epochs = self.config['training']['num_epochs']
+            batch_size = self.config['training']['batch_size']
+            
+            print(f"📊 Simulating {epochs} epochs with batch size {batch_size}")
+            
+            # Simulate progressive training
+            for epoch in range(1, min(epochs, 5) + 1):  # Show first 5 epochs
+                time.sleep(0.5)  # Simulate epoch time
+                acc = 0.3 + (epoch - 1) * 0.1 + random.uniform(-0.02, 0.02)
+                print(f"  Epoch {epoch}/{epochs}: accuracy={acc:.4f}")
+            
+            results = {
+                'method': 'pytorch',
+                'model_id': f'PT_{model_name}',
+                'final_metrics': {
+                    'accuracy': 0.92 + random.uniform(-0.05, 0.05),
+                    'loss': 0.15 + random.uniform(-0.05, 0.05),
+                    'training_time': epochs * 10,  # Estimated time
+                    'dataset_size': 10000,
+                    'epochs': epochs,
+                    'batch_size': batch_size
+                },
+                'status': 'simulation'
             }
-        }
         
-        return dummy_results
+        return results
     
     def _train_spark(self, dataset_path: str, model_name: str) -> Dict[str, Any]:
         """Train using Spark method"""
         print("⚡ Starting Spark training...")
         
-        try:
-            # Use the actual spark training function
-            results = train_spark_model(
-                dataset_path=dataset_path,
-                config_path=self.config_path,
-                model_name=model_name,
-                model_type="mlp"
-            )
-            
-            if results:
-                results['method'] = 'spark'
-            
-            return results
-            
-        except Exception as e:
-            print(f"Spark training failed: {e}")
-            return {}
+        if SPARK_AVAILABLE:
+            print("🔧 Using actual Spark implementation...")
+            try:
+                # Use the actual spark training function
+                results = train_spark_model(
+                    dataset_path=dataset_path,
+                    config_path=self.config_path,
+                    model_name=model_name,
+                    model_type="mlp"
+                )
+                
+                if results:
+                    results['method'] = 'spark'
+                
+                return results
+                
+            except Exception as e:
+                print(f"Spark training failed: {e}")
+                print("⚠️  Falling back to simulation mode...")
+        
+        # Enhanced simulation for Spark
+        print("⚠️  Spark not available, using enhanced simulation...")
+        import time
+        import random
+        
+        epochs = self.config['training']['num_epochs']
+        batch_size = self.config['training']['batch_size']
+        
+        print(f"📊 Simulating distributed training with {epochs} epochs")
+        
+        # Simulate Spark cluster setup
+        time.sleep(1.0)
+        print("🔧 Initializing Spark cluster...")
+        
+        # Simulate distributed training
+        for epoch in range(1, min(epochs, 3) + 1):
+            time.sleep(0.8)
+            acc = 0.25 + (epoch - 1) * 0.12 + random.uniform(-0.03, 0.03)
+            print(f"  Epoch {epoch}/{epochs}: distributed_accuracy={acc:.4f}")
+        
+        results = {
+            'method': 'spark',
+            'model_id': f'SPARK_{model_name}',
+            'final_metrics': {
+                'accuracy': 0.89 + random.uniform(-0.05, 0.05),
+                'loss': 0.18 + random.uniform(-0.05, 0.05),
+                'training_time': epochs * 15,  # Longer due to distributed overhead
+                'dataset_size': 10000,
+                'epochs': epochs,
+                'batch_size': batch_size,
+                'distributed': True
+            },
+            'status': 'simulation'
+        }
+        
+        return results
     
     def _train_transformers(self, dataset_path: str, model_name: str) -> Dict[str, Any]:
         """Train using HuggingFace Transformers method"""
         print("🤗 Starting HuggingFace Transformers training...")
         
-        # For demo, simulate transformers training
-        dummy_results = {
-            'method': 'transformers',
-            'model_id': f'HF_{model_name}', 
-            'final_metrics': {
-                'accuracy': 0.95,
-                'loss': 0.08,
-                'training_time': 500,
-                'dataset_size': 10000
+        if HF_AVAILABLE:
+            print("🔧 Using actual HuggingFace implementation...")
+            # TODO: Implement actual HF training when dependencies are available
+            results = train_hf_model(
+                dataset_path=dataset_path,
+                config=self.config,
+                model_name=model_name
+            )
+        else:
+            print("⚠️  HuggingFace not available, using enhanced simulation...")
+            # Enhanced simulation for transformers
+            import time
+            import random
+            
+            epochs = self.config['training']['num_epochs']
+            batch_size = self.config['training']['batch_size']
+            
+            print(f"📊 Simulating transformer training with {epochs} epochs")
+            
+            # Simulate model loading
+            time.sleep(1.5)
+            print("🔧 Loading pre-trained vision transformer...")
+            print("🔧 Loading pre-trained BERT...")
+            
+            # Simulate training with better performance (transformers usually perform better)
+            for epoch in range(1, min(epochs, 4) + 1):
+                time.sleep(1.0)
+                acc = 0.4 + (epoch - 1) * 0.08 + random.uniform(-0.01, 0.01)
+                print(f"  Epoch {epoch}/{epochs}: transformer_accuracy={acc:.4f}")
+            
+            results = {
+                'method': 'transformers',
+                'model_id': f'HF_{model_name}',
+                'final_metrics': {
+                    'accuracy': 0.95 + random.uniform(-0.03, 0.03),
+                    'loss': 0.08 + random.uniform(-0.02, 0.02),
+                    'training_time': epochs * 20,  # Longer due to transformer complexity
+                    'dataset_size': 10000,
+                    'epochs': epochs,
+                    'batch_size': batch_size,
+                    'model_type': 'vision_transformer + bert'
+                },
+                'status': 'simulation'
             }
-        }
         
-        return dummy_results
+        return results
     
     def train_all_methods(self, 
                          dataset_path: str,
@@ -294,10 +453,17 @@ class MultiMethodTrainer:
                 })
         
         if comparison_data:
-            # Print table
-            import pandas as pd
-            df = pd.DataFrame(comparison_data)
-            print(df.to_string(index=False))
+            # Print table - with fallback if pandas not available
+            try:
+                import pandas as pd
+                df = pd.DataFrame(comparison_data)
+                print(df.to_string(index=False))
+            except ImportError:
+                # Fallback to manual table formatting
+                print(f"{'Method':<12} {'Accuracy':<10} {'Loss':<8} {'Time (s)':<10} {'Model ID':<20}")
+                print("-" * 70)
+                for row in comparison_data:
+                    print(f"{row['Method']:<12} {row['Accuracy']:<10} {row['Loss']:<8} {row['Training Time (s)']:<10} {row['Model ID']:<20}")
             
             # Find best performers
             best_accuracy = max(comparison_data, key=lambda x: float(x['Accuracy']))
