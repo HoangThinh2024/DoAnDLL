@@ -977,6 +977,16 @@ class PillRecognitionWebUI:
                 }
                 </style>
                 """, unsafe_allow_html=True)
+            # Hướng dẫn đổi theme thực sự
+            st.info("""
+                ⚠️ Để đổi theme thực sự (Light/Dark/Auto) cho toàn bộ ứng dụng, hãy chỉnh file `.streamlit/config.toml`:
+                
+                ```toml
+                [theme]
+                base="light"  # hoặc "dark" hoặc "auto"
+                ```
+                Sau đó reload lại ứng dụng Streamlit.
+            """)
 
             # Model settings
             st.markdown("### 🧠 Cài đặt Model")
@@ -1034,97 +1044,42 @@ class PillRecognitionWebUI:
                 st.json(config)
         
         with col2:
-            # System information
-            st.markdown("### 🖥️ Thông tin Hệ thống")
-            
-            device_info = st.session_state.device_info
-            
-            system_info = {
-                "OS": "Ubuntu 22.04 LTS",
-                "Python": f"{sys.version.split()[0]}",
-                "PyTorch": device_info.get("pytorch_version", "Unknown"),
-                "CUDA": device_info.get("cuda_version", "N/A"),
-                "GPU": device_info.get("gpu_name", "CPU Only"),
-                "GPU Memory": device_info.get("gpu_memory_gb", "N/A")
-            }
-            
-            for key, value in system_info.items():
-                st.metric(key, value)
-            
-            # System health check
-            st.markdown("### 🔍 System Health")
-            
-            if st.button("🔄 Kiểm tra hệ thống"):
-                with st.spinner("Đang kiểm tra..."):
-                    time.sleep(2)
-                
-                health_status = {
-                    "GPU Status": "✅ Available" if device_info.get("cuda_available") else "❌ Not Available",
-                    "Model Status": "✅ Loaded" if st.session_state.model else "⚠️ Not Loaded",
-                    "Dataset": "✅ Found" if (PROJECT_ROOT / "Dataset_BigData").exists() else "❌ Missing",
-                    "Dependencies": "✅ OK",
-                    "Memory": "✅ Sufficient"
-                }
-                
-                for key, value in health_status.items():
-                    if "✅" in value:
-                        st.success(f"{key}: {value}")
-                    elif "⚠️" in value:
-                        st.warning(f"{key}: {value}")
-                    else:
-                        st.error(f"{key}: {value}")
-            
-            # Quick actions
-            st.markdown("### ⚡ Quick Actions")
-            
-            if st.button("🔄 Reload Model"):
-                if st.session_state.model:
-                    st.info("🔄 Đang reload model...")
-                    time.sleep(1)
-                    st.success("✅ Model đã được reload!")
-                else:
-                    self.load_model()
-            
-            if st.button("🧹 Clear Cache"):
-                if 'model' in st.session_state:
-                    del st.session_state['model']
-                st.success("✅ Cache đã được xóa!")
-                st.rerun()
-            
-            if st.button("📊 System Monitor"):
-                st.info("🔄 Đang mở system monitor...")
-                # This would open a real-time monitoring dashboard
-    
-    def run(self):
-        """Chạy ứng dụng web chính"""
-        
-        # Show header
-        self.show_header()
-        
-        # Show sidebar
-        self.show_sidebar()
-        
-        # Main navigation menu
-        selected = option_menu(
-            menu_title=None,
-            options=["🎯 Nhận dạng", "🏋️ Training", "📊 Analytics", "⚙️ Settings"],
-            icons=["camera", "cpu", "graph-up", "gear"],
-            menu_icon="cast",
-            default_index=0,
-            orientation="horizontal",
-            styles={
-                "container": {"padding": "0!important", "background-color": "#fafafa"},
-                "icon": {"color": "orange", "font-size": "18px"},
-                "nav-link": {
-                    "font-size": "16px",
-                    "text-align": "center",
-                    "margin": "0px",
-                    "--hover-color": "#eee"
-                },
-                "nav-link-selected": {"background-color": "#667eea"},
-            }
-        )
-        
+            # ...existing code...
+        with col2:
+            st.markdown("### 📊 Training Status")
+
+            # Current training info
+            if 'training_active' not in st.session_state:
+                st.session_state.training_active = False
+
+            if st.session_state.training_active:
+                st.success("🟢 Training đang chạy")
+
+                # Mock training progress
+                current_epoch = st.empty()
+                progress_bar = st.progress(0)
+
+                # Simulated training metrics
+                loss_chart = st.empty()
+                acc_chart = st.empty()
+
+                # Stop button
+                if st.button("� Dừng Training"):
+                    st.session_state.training_active = False
+                    st.rerun()
+                # Nút tiếp tục training nếu chưa đủ epoch
+                if st.session_state.training_epoch < epochs:
+                    if st.button("▶️ Tiếp tục Training"):
+                        self.start_training(epochs, batch_size, learning_rate, model_type, train_method)
+            else:
+                st.info("⏸️ Không có training nào đang chạy")
+
+                # Dataset info
+                st.markdown("#### 📁 Dataset Info")
+                st.metric("Train images", "12,678")
+                st.metric("Val images", "2,115")
+                st.metric("Test images", "1,054")
+                st.metric("Classes", "156")
         # Show selected page
         if selected == "🎯 Nhận dạng":
             self.show_recognition_page()
