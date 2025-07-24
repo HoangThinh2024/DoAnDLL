@@ -105,6 +105,33 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 class PillRecognitionWebUI:
+    def run(self):
+        """Entry point cho ứng dụng web, chọn trang theo sidebar hoặc menu"""
+        # Sidebar/menu chọn trang
+        menu = ["🎯 Nhận dạng", "🏋️ Training", "📊 Analytics", "⚙️ Settings"]
+        selected = st.sidebar.radio("Chọn trang:", menu, index=0)
+        self.show_header()
+        self.show_sidebar()
+        if selected == "🎯 Nhận dạng":
+            self.show_recognition_page()
+        elif selected == "🏋️ Training":
+            self.show_training_page()
+        elif selected == "📊 Analytics":
+            self.show_analytics_page()
+        elif selected == "⚙️ Settings":
+            self.show_settings_page()
+        # Footer
+        st.markdown("---")
+        st.markdown(
+            """
+            <div style='text-align: center; color: #666; padding: 1rem;'>
+                💊 Smart Pill Recognition System v1.0.0 | 
+                Tối ưu hóa cho Ubuntu 22.04 + NVIDIA Quadro 6000 + CUDA 12.8 | 
+                Made with ❤️ by DoAnDLL Team
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     """🌐 Lớp chính cho Web UI nhận dạng viên thuốc"""
     
     def __init__(self):
