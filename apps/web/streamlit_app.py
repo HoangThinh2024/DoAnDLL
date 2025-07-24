@@ -1044,8 +1044,6 @@ class PillRecognitionWebUI:
                 st.json(config)
         
         with col2:
-            # ...existing code...
-        with col2:
             st.markdown("### 📊 Training Status")
 
             # Current training info
