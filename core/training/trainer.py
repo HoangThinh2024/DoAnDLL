@@ -22,8 +22,8 @@ def train_model_spark(model_type: str,
         import torch
         import numpy as np
         from pathlib import Path
-        from .model_registry import ModelRegistry
-        from .multimodal_transformer import MultimodalPillTransformer
+        from core.models.model_registry import ModelRegistry
+        from core.models.multimodal_transformer import MultimodalPillTransformer
         # Tạo Spark session
         spark = SparkSession.builder.appName("PillRecognitionTraining").getOrCreate()
         # Đọc dữ liệu bằng Spark (giả lập, thực tế cần custom loader)
@@ -79,16 +79,16 @@ from pathlib import Path
 import time
 from collections import defaultdict
 
-from ..models.multimodal_transformer import MultimodalPillTransformer
-from ..models.model_registry import ModelRegistry, TrainingMethod
+from core.models.multimodal_transformer import MultimodalPillTransformer
+from core.models.model_registry import ModelRegistry, TrainingMethod
 try:
-    from ..data.data_processing import create_dataloaders, SparkDataProcessor
+    from core.data.data_processing import create_dataloaders, SparkDataProcessor
 except ImportError:
     print("Warning: data_processing module not found")
     
-from ..utils.metrics import MetricsCalculator
+from core.utils.metrics import MetricsCalculator
 try:
-    from ..utils.utils import (
+    from core.utils.utils import (
         set_seed, 
         save_checkpoint, 
         load_checkpoint, 
@@ -100,14 +100,11 @@ try:
     )
 except ImportError:
     print("Warning: utils module not found, using fallbacks")
-    
     def set_seed(seed):
         torch.manual_seed(seed)
         np.random.seed(seed)
-        
     def optimize_for_quadro_6000():
         pass
-        
     def get_gpu_memory_info():
         return None
 
