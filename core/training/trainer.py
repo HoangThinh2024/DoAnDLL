@@ -964,3 +964,27 @@ if __name__ == "__main__":
             json.dump(report, f, indent=2, default=str)
         
         logger.info(f"Evaluation report saved: {report_path}")
+
+
+def train_model(model_type: str,
+                dataset_path: str,
+                epochs: int,
+                batch_size: int,
+                learning_rate: float,
+                checkpoint_path: str,
+                progress_callback=None):
+    """
+    Wrapper function to train a model based on the specified type.
+    Args:
+        model_type: Type of the model (e.g., multimodal_transformer, vision_only, text_only, spark).
+        dataset_path: Path to the dataset.
+        epochs: Number of epochs.
+        batch_size: Batch size.
+        learning_rate: Learning rate.
+        checkpoint_path: Path to save the checkpoint.
+        progress_callback: Callback function for progress updates.
+    """
+    if model_type == "spark":
+        train_model_spark(model_type, dataset_path, epochs, batch_size, learning_rate, checkpoint_path, progress_callback)
+    else:
+        raise NotImplementedError(f"Training for model type '{model_type}' is not implemented.")
