@@ -83,8 +83,10 @@ from core.models.multimodal_transformer import MultimodalPillTransformer
 from core.models.model_registry import ModelRegistry, TrainingMethod
 try:
     from core.data.data_processing import create_dataloaders, SparkDataProcessor
-except ImportError:
-    print("Warning: data_processing module not found")
+except ImportError as e:
+    print(f"Warning: data_processing module not found: {e}")
+    create_dataloaders = None
+    SparkDataProcessor = None
     
 from core.utils.metrics import MetricsCalculator
 try:
