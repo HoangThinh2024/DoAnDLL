@@ -157,35 +157,78 @@ echo "📄 Training log: $LOG_FILE"
 echo ""
 
 # Run training with logging
-# Use the correct training script path, with fallback to simulation
-PYTORCH_AVAILABLE=false
-python3 -c "import torch" 2>/dev/null && PYTORCH_AVAILABLE=true
+# Use the improved train_multi_method.py script (works with or without dependencies)
+echo -e "${BLUE}🔍 Checking available training methods...${NC}"
 
-if [ "$PYTORCH_AVAILABLE" = "true" ] && [ -f "train_multi_method.py" ]; then
-    echo "🔄 Using train_multi_method.py for training..."
+if [ -f "train_multi_method.py" ]; then
+    echo "🔄 Using enhanced train_multi_method.py (supports all methods)..."
+    
+    # Choose method based on what's available
+    METHOD="pytorch"  # Default, but script will auto-fallback to simulation
+    
+    # Create a temporary config with our parameters
+    CONFIG_FILE="config/train_config_${TIMESTAMP}.yaml"
+    mkdir -p config
+    
+    cat > "$CONFIG_FILE" << EOF
+model:
+  visual_encoder:
+    model_name: "vit_base_patch16_224"
+    pretrained: true
+    output_dim: 768
+  text_encoder:
+    model_name: "bert-base-uncased"
+    pretrained: true
+    output_dim: 768
+    max_length: 128
+  fusion:
+    type: "cross_attention"
+    hidden_dim: 768
+    num_attention_heads: 8
+    dropout: 0.1
+  classifier:
+    num_classes: 1000
+    hidden_dims: [512, 256]
+    dropout: 0.3
+training:
+  num_epochs: $EPOCHS
+  batch_size: $BATCH_SIZE
+  learning_rate: $LEARNING_RATE
+  patience: $PATIENCE
+  seed: $SEED
+  optimizer: "adamw"
+  scheduler: "cosine_annealing"
+  weight_decay: 0.01
+data:
+  image_size: 224
+  train_split: $(python3 -c "print(1 - $VALIDATION_SPLIT)")
+  val_split: $VALIDATION_SPLIT
+  test_split: 0.0
+hardware:
+  gpu:
+    mixed_precision: true
+    memory_fraction: 0.9
+logging:
+  level: "INFO"
+  wandb:
+    enabled: false
+    project: "pill-recognition-multimethod"
+EOF
+    
     python3 train_multi_method.py \
-        --dataset-path "$DATASET_PATH" \
-        --epochs "$EPOCHS" \
-        --batch-size "$BATCH_SIZE" \
-        --learning-rate "$LEARNING_RATE" \
-        --validation-split "$VALIDATION_SPLIT" \
-        --patience "$PATIENCE" \
-        --seed "$SEED" \
+        --config "$CONFIG_FILE" \
+        train \
+        --method "$METHOD" \
+        --dataset "$DATASET_PATH" \
+        --model "cure_model_${TIMESTAMP}" \
         2>&1 | tee "$LOG_FILE"
-elif [ "$PYTORCH_AVAILABLE" = "true" ] && [ -f "legacy/train_cure_model.py" ]; then
-    echo "🔄 Using legacy/train_cure_model.py for training..."
-    python3 legacy/train_cure_model.py \
-        --dataset-path "$DATASET_PATH" \
-        --epochs "$EPOCHS" \
-        --batch-size "$BATCH_SIZE" \
-        --learning-rate "$LEARNING_RATE" \
-        --validation-split "$VALIDATION_SPLIT" \
-        --patience "$PATIENCE" \
-        --seed "$SEED" \
-        2>&1 | tee "$LOG_FILE"
+    
+    # Clean up temporary config
+    rm -f "$CONFIG_FILE"
+    
 elif [ -f "training_simulation.py" ]; then
     echo "🔄 Using training_simulation.py for demonstration..."
-    echo -e "${YELLOW}ℹ️  Running training simulation (PyTorch not available)${NC}"
+    echo -e "${YELLOW}ℹ️  Running training simulation (enhanced features not available)${NC}"
     python3 training_simulation.py \
         --dataset-path "$DATASET_PATH" \
         --epochs "$EPOCHS" \
@@ -198,9 +241,8 @@ elif [ -f "training_simulation.py" ]; then
 else
     echo -e "${RED}❌ Error: No training script found${NC}"
     echo "Available scripts:"
-    echo "  - train_multi_method.py (requires PyTorch)"
-    echo "  - legacy/train_cure_model.py (requires PyTorch)"
-    echo "  - training_simulation.py (demo mode)"
+    echo "  - train_multi_method.py (enhanced multi-method trainer)"
+    echo "  - training_simulation.py (basic simulation)"
     exit 1
 fi
 
