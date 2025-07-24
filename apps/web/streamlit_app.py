@@ -16,6 +16,7 @@ import time
 import sys
 from pathlib import Path
 import platform
+import psutil
 # Thêm Spark và Transformers
 try:
     import pyspark
