@@ -751,12 +751,11 @@ class PillRecognitionWebUI:
         os.makedirs(checkpoints_dir, exist_ok=True)
         checkpoint_path = os.path.join(checkpoints_dir, f"best_model_{model_key}_{train_method.replace(' ', '_')}.pth")
 
-        # Gọi hàm train_model thực tế
+        # Gọi hàm train_model thực tế hoặc train_model_spark nếu là Spark
         try:
             with progress_placeholder.container():
                 st.markdown(f"### 🔄 Training Progress ({train_method})")
                 progress_bar = st.progress(0)
-                # Hàm train_model phải nhận callback để cập nhật tiến trình
                 def streamlit_callback(epoch, total_epochs, train_loss, val_loss, train_acc, val_acc):
                     percent = (epoch + 1) / total_epochs
                     progress_bar.progress(percent)
@@ -767,16 +766,27 @@ class PillRecognitionWebUI:
                     - Train Acc: {train_acc:.3f}
                     - Val Acc: {val_acc:.3f}
                     """)
-                # Gọi train_model
-                trainer.train_model(
-                    model_type=model_key,
-                    dataset_path=dataset_path,
-                    epochs=epochs,
-                    batch_size=batch_size,
-                    learning_rate=learning_rate,
-                    checkpoint_path=checkpoint_path,
-                    progress_callback=streamlit_callback
-                )
+                # Nếu là Spark (PySpark) thì gọi train_model_spark nếu có
+                if train_method == "Spark (PySpark)" and hasattr(trainer, "train_model_spark"):
+                    trainer.train_model_spark(
+                        model_type=model_key,
+                        dataset_path=dataset_path,
+                        epochs=epochs,
+                        batch_size=batch_size,
+                        learning_rate=learning_rate,
+                        checkpoint_path=checkpoint_path,
+                        progress_callback=streamlit_callback
+                    )
+                else:
+                    trainer.train_model(
+                        model_type=model_key,
+                        dataset_path=dataset_path,
+                        epochs=epochs,
+                        batch_size=batch_size,
+                        learning_rate=learning_rate,
+                        checkpoint_path=checkpoint_path,
+                        progress_callback=streamlit_callback
+                    )
         except Exception as e:
             st.session_state.training_active = False
             st.error(f"Lỗi khi training: {e}\n{traceback.format_exc()}")
