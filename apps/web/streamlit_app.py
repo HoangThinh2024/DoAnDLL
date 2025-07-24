@@ -15,6 +15,7 @@ from typing import Dict, Any, List, Tuple
 import time
 import sys
 from pathlib import Path
+import platform
 # Thêm Spark và Transformers
 try:
     import pyspark
@@ -176,8 +177,6 @@ class PillRecognitionWebUI:
     
     def show_sidebar(self):
         """Hiển thị sidebar với thông tin hệ thống chi tiết"""
-        import platform
-        import psutil
         with st.sidebar:
             st.markdown("## 🖥️ Thông tin hệ thống")
 
