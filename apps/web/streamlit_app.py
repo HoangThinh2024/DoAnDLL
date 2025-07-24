@@ -1073,7 +1073,7 @@ class PillRecognitionWebUI:
         with col2:
             st.markdown("### 📊 Training Status")
 
-            # Current training info
+            # Only show training status if training_active is in session_state
             if 'training_active' not in st.session_state:
                 st.session_state.training_active = False
 
@@ -1089,13 +1089,21 @@ class PillRecognitionWebUI:
                 acc_chart = st.empty()
 
                 # Stop button
-                if st.button("� Dừng Training"):
+                if st.button("🛑 Dừng Training"):
                     st.session_state.training_active = False
                     st.rerun()
-                # Nút tiếp tục training nếu chưa đủ epoch
-                if st.session_state.training_epoch < epochs:
-                    if st.button("▶️ Tiếp tục Training"):
-                        self.start_training(epochs, batch_size, learning_rate, model_type, train_method)
+                # Only show 'continue training' if all required variables are in session_state
+                required_vars = ['training_epoch', 'epochs', 'batch_size', 'learning_rate', 'model_type', 'train_method']
+                if all(var in st.session_state for var in required_vars):
+                    if st.session_state.training_epoch < st.session_state.epochs:
+                        if st.button("▶️ Tiếp tục Training"):
+                            self.start_training(
+                                st.session_state.epochs,
+                                st.session_state.batch_size,
+                                st.session_state.learning_rate,
+                                st.session_state.model_type,
+                                st.session_state.train_method
+                            )
             else:
                 st.info("⏸️ Không có training nào đang chạy")
 
