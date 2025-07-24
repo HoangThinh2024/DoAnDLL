@@ -744,7 +744,7 @@ def main():
     
     # Initialize optimizer and scheduler
     optimizer = optim.Adam(combined_model.parameters(), lr=learning_rate, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=3, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=3)
     
     # Use Label Smoothing loss for better generalization
     criterion = LabelSmoothingCrossEntropy()
