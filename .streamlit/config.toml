@@ -22,6 +22,7 @@ serverAddress = "localhost"
 gatherUsageStats = false
 
 [theme]
+base = "light"
 # UI theme configuration
 primaryColor = "#667eea"
 backgroundColor = "#ffffff"
