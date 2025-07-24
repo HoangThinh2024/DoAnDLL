@@ -175,23 +175,31 @@ class PillRecognitionWebUI:
         """, unsafe_allow_html=True)
     
     def show_sidebar(self):
-        """Hiển thị sidebar với thông tin hệ thống"""
+        """Hiển thị sidebar với thông tin hệ thống chi tiết"""
+        import platform
+        import psutil
         with st.sidebar:
             st.markdown("## 🖥️ Thông tin hệ thống")
-            
+
             device_info = st.session_state.device_info
-            
+
+            # OS, Python, CPU, RAM
+            st.markdown(f"**OS:** {platform.system()} {platform.release()}")
+            st.markdown(f"**Python:** {platform.python_version()}")
+            st.markdown(f"**CPU:** {platform.processor() or platform.machine()}")
+            st.markdown(f"**RAM:** {round(psutil.virtual_memory().total / (1024**3), 2)} GB")
+
             # Device status
             if device_info.get("cuda_available"):
                 st.success(f"🚀 GPU: {device_info.get('gpu_name', 'Unknown')}")
-                st.info(f"💾 Memory: {device_info.get('gpu_memory_gb', 'Unknown')}")
+                st.info(f"💾 GPU Memory: {device_info.get('gpu_memory_gb', 'Unknown')}")
                 st.info(f"⚡ CUDA: {device_info.get('cuda_version', 'Unknown')}")
             else:
                 st.warning("💻 CPU Mode")
                 st.warning("⚠️ CUDA không khả dụng")
-            
+
             st.markdown("---")
-            
+
             # Model status
             st.markdown("## 🧠 Model Status")
             if st.session_state.model is None:
@@ -201,9 +209,9 @@ class PillRecognitionWebUI:
             else:
                 st.success("✅ Model đã sẵn sàng")
                 st.info("🎯 Multimodal Transformer")
-            
+
             st.markdown("---")
-            
+
             # Quick stats
             st.markdown("## 📊 Quick Stats")
             col1, col2 = st.columns(2)
@@ -211,9 +219,9 @@ class PillRecognitionWebUI:
                 st.metric("Accuracy", "96.3%", "2.1%")
             with col2:
                 st.metric("Speed", "0.15s", "-0.03s")
-            
+
             st.markdown("---")
-            
+
             # Useful links
             st.markdown("## 🔗 Useful Links")
             st.markdown("- [📖 Documentation]()")
