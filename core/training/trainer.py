@@ -478,7 +478,7 @@ def create_enhanced_pytorch_trainer(config_path: str = None) -> EnhancedMultimod
                 "optimizer": "adamw",
                 "scheduler": "cosine_annealing",
                 "weight_decay": 0.01,
-                "patience": 10,
+                "patience": 15,  # Increased patience to prevent early stopping
                 "seed": 42
             },
             "hardware": {
@@ -539,7 +539,7 @@ if __name__ == "__main__":
             "optimizer": "adamw",
             "scheduler": "cosine_annealing",
             "weight_decay": 0.01,
-            "patience": 5,
+            "patience": 15,  # Increased patience to prevent early stopping
             "seed": 42
         },
         "hardware": {
@@ -551,7 +551,7 @@ if __name__ == "__main__":
     print("✅ Enhanced PyTorch trainer created successfully")
     
     def _save_checkpoint(self, epoch: int, is_best: bool = False):
-        """Save model checkpoint"""
+        """Save model checkpoint with validation"""
         model_state = self.model.module.state_dict() if self.multi_gpu else self.model.state_dict()
         
         checkpoint = {
@@ -562,7 +562,9 @@ if __name__ == "__main__":
             'best_val_acc': self.best_val_acc,
             'train_metrics': dict(self.train_metrics),
             'val_metrics': dict(self.val_metrics),
-            'config': self.config
+            'config': self.config,
+            'model_architecture': str(self.model),
+            'timestamp': time.time()
         }
         
         if is_best:
@@ -570,8 +572,25 @@ if __name__ == "__main__":
         else:
             filepath = self.checkpoint_dir / f"checkpoint_epoch_{epoch + 1}.pth"
         
-        torch.save(checkpoint, filepath)
-        logger.info(f"Checkpoint saved: {filepath}")
+        try:
+            torch.save(checkpoint, filepath)
+            
+            # Validate the saved checkpoint
+            test_load = torch.load(filepath, map_location='cpu')
+            required_keys = ['model_state_dict', 'optimizer_state_dict', 'epoch', 'best_val_acc']
+            missing_keys = [key for key in required_keys if key not in test_load]
+            
+            if missing_keys:
+                logger.warning(f"Checkpoint missing keys: {missing_keys}")
+            else:
+                logger.info(f"✅ Checkpoint saved and validated: {filepath}")
+                
+        except Exception as e:
+            logger.error(f"Error saving checkpoint: {e}")
+            # Try backup location
+            backup_path = self.checkpoint_dir / f"backup_checkpoint_epoch_{epoch + 1}.pth"
+            torch.save(checkpoint, backup_path)
+            logger.info(f"Saved backup checkpoint: {backup_path}")
     
     def _load_checkpoint(self, checkpoint_path: str):
         """Load checkpoint for resuming training"""
