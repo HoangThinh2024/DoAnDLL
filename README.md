@@ -260,6 +260,23 @@ Our system implements a novel **cross-modal attention architecture** that effect
 
 ### 🏃‍♂️ Training Your Own Model
 
+
+> **⚠️ Lưu ý quan trọng khi huấn luyện (Training):**
+>
+> - **Bạn phải truyền đường dẫn dữ liệu thật (dataset) khi train.** Nếu không, hệ thống sẽ báo lỗi và không thực hiện train mô phỏng mặc định.
+> - **Không có dữ liệu thật, không thể train ra model thực!**
+> - **Sau khi train thành công, kiểm tra thư mục `checkpoints/` để xác nhận đã sinh ra file model (`best_model.pth` hoặc tương tự).**
+> - Nếu không thấy file checkpoint, hãy kiểm tra lại đường dẫn dữ liệu, cấu hình, và log lỗi khi train.
+
+Ví dụ lệnh train với dữ liệu thật:
+```bash
+python train_multi_method.py train --method pytorch --dataset Dataset_BigData/CURE_dataset
+```
+
+Nếu truyền thiếu hoặc sai đường dẫn dataset, hệ thống sẽ báo lỗi rõ ràng và dừng train.
+
+---
+
 The system supports multiple training methods with automatic fallback to simulation mode when dependencies are unavailable.
 
 #### Quick Start Training

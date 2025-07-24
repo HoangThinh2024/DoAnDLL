@@ -409,25 +409,33 @@ class MultimodalTrainer:
         
         total_time = time.time() - start_time
         logger.info(f"Training completed in {total_time:.2f} seconds")
-        
+
+        # Guarantee at least one checkpoint is saved
+        best_ckpt = self.checkpoint_dir / "best_model.pth"
+        last_ckpt = self.checkpoint_dir / f"checkpoint_epoch_{self.current_epoch + 1}.pth"
+        if not best_ckpt.exists() and not last_ckpt.exists():
+            # Save last checkpoint if none exist
+            self._save_checkpoint(self.current_epoch, is_best=False)
+            logger.info(f"No checkpoint found after training, forced save at epoch {self.current_epoch + 1}")
+
         # Final evaluation
         final_metrics = self._final_evaluation(val_loader)
         final_metrics['training_time'] = total_time
         final_metrics['dataset_size'] = len(train_loader.dataset)
-        
+
         # Register trained model
         model_id = self.register_trained_model(
             model_name=model_name,
             final_metrics=final_metrics,
-            description=f"Enhanced PyTorch multimodal model trained for {epoch + 1} epochs"
+            description=f"Enhanced PyTorch multimodal model trained for {self.current_epoch + 1} epochs"
         )
-        
+
         return {
             'model_id': model_id,
             'final_metrics': final_metrics,
             'training_time': total_time,
-            'best_epoch': epoch + 1,
-            'total_epochs': epoch + 1
+            'best_epoch': self.current_epoch + 1,
+            'total_epochs': self.current_epoch + 1
         }
 
 

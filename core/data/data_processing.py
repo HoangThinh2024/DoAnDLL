@@ -60,7 +60,8 @@ class UnifiedPillDataset(Dataset):
         
         # Load data
         self.data = self._load_data()
-        
+        if len(self.data) == 0:
+            raise ValueError(f"❌ Không tìm thấy dữ liệu trong '{self.data_path}'. Bạn phải truyền đường dẫn dữ liệu thật, không được để trống!")
         print(f"✅ Dataset loaded: {len(self.data)} samples ({split})")
     
     def _get_default_transform(self, image_size: int) -> A.Compose:
