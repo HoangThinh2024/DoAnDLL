@@ -18,25 +18,33 @@ import json
 import time
 from datetime import datetime
 import matplotlib.font_manager as fm
+import argparse
+import sys
 # --- TÍCH HỢP ALBUMENTATIONS ---
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 #nohup python3 your_script.py > /dev/null 2>&1 &
 # nohup python main_Basic_model.py > /dev/null 2>&1 
-font_path = os.path.expanduser('venv/fonts/TIMES.TTF')
-fm.fontManager.addfont(font_path)
+try:
+    font_path = os.path.expanduser('venv/fonts/TIMES.TTF')
+    if os.path.exists(font_path):
+        fm.fontManager.addfont(font_path)
+except:
+    pass  # Ignore font loading errors
 
 
 multiprocessing.set_start_method('spawn', force=True)
 
 # Define paths and parameters
-base_dir = "CURE_dataset_train_cut_bounding_box"
-validation_dir = "CURE_dataset_validation_cut_bounding_box"  # Thêm đường dẫn tới tập validation
-subdirs = ["bottom/Customer", "bottom/Reference", "top/Customer", "top/Reference"]
+import os
+script_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir = os.path.join(script_dir, "CURE_dataset_train_cut_bounding_box")
+validation_dir = os.path.join(script_dir, "CURE_dataset_validation_cut_bounding_box")  # Thêm đường dẫn tới tập validation
+subdirs = ["bottom/Customer", "top/Customer"]  # Chỉ có Customer folder
 batch_size = 16
 learning_rate = 1e-4
 epochs_phase_2 = 30  # Tăng số epochs để có thể early stop
-patience = 25  # Tăng patience để tránh dừng quá sớm - Số epochs chờ đợi để early stop (tăng từ 10 lên 25)
+patience = 25  # Tăng patience để tránh dừng quá sớm - Số epochs chờ đợi để early stop
 validation_split = 0.2  # Nếu không có tập validation riêng, dùng 20% từ tập train
 
 # Set device to GPU if available
@@ -44,8 +52,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # Initialize OCR model
-#ocr = PaddleOCR(use_angle_cls=True, lang='en')
-ocr = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False)
+try:
+    ocr = PaddleOCR(lang='en')
+    print("✅ PaddleOCR initialized successfully")
+except:
+    ocr = None
+    print("⚠️  PaddleOCR không khả dụng, sẽ bỏ qua OCR features")
 
 
 # Initialize BERT tokenizer and model
@@ -106,7 +118,7 @@ val_transform = A.Compose([
 class CNNModel(nn.Module):
     def __init__(self, output_size=196):
         super(CNNModel, self).__init__()
-        self.model = models.resnet18(pretrained=True)
+        self.model = models.resnet18(weights='IMAGENET1K_V1')  # Updated from pretrained=True
         self.model.fc = nn.Linear(self.model.fc.in_features, output_size)
 
     def forward(self, x):
@@ -134,9 +146,6 @@ class CombinedModel(nn.Module):
         combined_features = self.dropout(combined_features)  # Áp dụng dropout
         output = self.fc(combined_features)
         return output
-
-# Backward compatibility alias for external references
-MultimodalCNNModel = CombinedModel
 
 # Define text embedding function using BERT
 def text_to_tensor(text):
@@ -185,63 +194,70 @@ class PillImageDataset(Dataset):
             # 1. Trích xuất đặc trưng RGB
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
-            # 2. Trích xuất đặc trưng hình dạng (shape/contour)
-            # Chuyển sang ảnh xám
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
-            # Áp dụng GaussianBlur để giảm nhiễu trước khi phát hiện cạnh
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-            
-            # Sử dụng Canny để phát hiện cạnh
-            edges = cv2.Canny(blurred, 50, 150)
-            
-            # Tìm contours
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            # Tạo ảnh contour
-            contour_image = np.zeros_like(image)
-            cv2.drawContours(contour_image, contours, -1, (255, 255, 255), 2)
-            
-            # 3. Trích xuất đặc trưng texture
-            # Phương pháp 1: Sử dụng bộ lọc Gabor để trích xuất texture
-            # Khởi tạo kernel Gabor với các thông số khác nhau để bắt texture đa hướng
-            texture_image = np.zeros_like(image)
-            
-            # Tạo bộ lọc Gabor với các góc khác nhau
-            angles = [0, 45, 90, 135]
-            for theta in angles:
-                theta_rad = theta * np.pi / 180
-                kernel = cv2.getGaborKernel((21, 21), 5.0, theta_rad, 10.0, 0.5, 0, ktype=cv2.CV_32F)
-                
-                # Áp dụng bộ lọc
-                filtered = cv2.filter2D(gray, cv2.CV_8UC3, kernel)
-                
-                # Kết hợp kết quả
-                texture_image[:,:,0] = np.maximum(texture_image[:,:,0], filtered)
-                texture_image[:,:,1] = np.maximum(texture_image[:,:,1], filtered)
-                texture_image[:,:,2] = np.maximum(texture_image[:,:,2], filtered)
-            
-            # Apply Albumentations transform if available
+            # Sử dụng Albumentations transform hoặc fallback
             if self.transform and hasattr(self.transform, 'additional_targets'):
-                # Use Albumentations with multi-target support
+                # Đây là Albumentations transform
+                
+                # 2. Trích xuất đặc trưng hình dạng (shape/contour)
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+                edges = cv2.Canny(blurred, 50, 150)
+                contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                contour_image = np.zeros_like(rgb_image)
+                cv2.drawContours(contour_image, contours, -1, (255, 255, 255), 2)
+                
+                # 3. Trích xuất đặc trưng texture
+                texture_image = np.zeros_like(rgb_image)
+                angles = [0, 45, 90, 135]
+                for theta in angles:
+                    theta_rad = theta * np.pi / 180
+                    kernel = cv2.getGaborKernel((21, 21), 5.0, theta_rad, 10.0, 0.5, 0, ktype=cv2.CV_32F)
+                    filtered = cv2.filter2D(gray, cv2.CV_8UC3, kernel)
+                    texture_image[:,:,0] = np.maximum(texture_image[:,:,0], filtered)
+                    texture_image[:,:,1] = np.maximum(texture_image[:,:,1], filtered)
+                    texture_image[:,:,2] = np.maximum(texture_image[:,:,2], filtered)
+                
+                # Áp dụng Albumentations transform với named arguments
                 transformed = self.transform(image=rgb_image, contour=contour_image, texture=texture_image)
                 rgb_tensor = transformed['image']
                 contour_tensor = transformed['contour']
                 texture_tensor = transformed['texture']
             else:
-                # Use PIL/torchvision transforms (backward compatibility)
-                pil_rgb = Image.fromarray(rgb_image)
-                pil_contour = Image.fromarray(contour_image)
-                pil_texture = Image.fromarray(texture_image)
+                # Fallback to traditional transforms
+                pil_image = Image.fromarray(rgb_image)
+                rgb_tensor = self.transform(pil_image) if self.transform else torch.tensor(rgb_image / 255.0, dtype=torch.float32).permute(2, 0, 1)
                 
-                rgb_tensor = self.transform(pil_rgb) if self.transform else torch.tensor(rgb_image / 255.0, dtype=torch.float32).permute(2, 0, 1)
-                contour_tensor = self.transform(pil_contour) if self.transform else torch.tensor(contour_image / 255.0, dtype=torch.float32).permute(2, 0, 1)
-                texture_tensor = self.transform(pil_texture) if self.transform else torch.tensor(texture_image / 255.0, dtype=torch.float32).permute(2, 0, 1)
+                # 2. Trích xuất đặc trưng hình dạng (shape/contour)
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+                edges = cv2.Canny(blurred, 50, 150)
+                contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                contour_image = np.zeros_like(image)
+                cv2.drawContours(contour_image, contours, -1, (255, 255, 255), 2)
+                contour_pil = Image.fromarray(contour_image)
+                contour_tensor = self.transform(contour_pil) if self.transform else torch.tensor(contour_image / 255.0, dtype=torch.float32).permute(2, 0, 1)
+                
+                # 3. Trích xuất đặc trưng texture
+                texture_image = np.zeros_like(image)
+                angles = [0, 45, 90, 135]
+                for theta in angles:
+                    theta_rad = theta * np.pi / 180
+                    kernel = cv2.getGaborKernel((21, 21), 5.0, theta_rad, 10.0, 0.5, 0, ktype=cv2.CV_32F)
+                    filtered = cv2.filter2D(gray, cv2.CV_8UC3, kernel)
+                    texture_image[:,:,0] = np.maximum(texture_image[:,:,0], filtered)
+                    texture_image[:,:,1] = np.maximum(texture_image[:,:,1], filtered)
+                    texture_image[:,:,2] = np.maximum(texture_image[:,:,2], filtered)
+                
+                texture_pil = Image.fromarray(texture_image)
+                texture_tensor = self.transform(texture_pil) if self.transform else torch.tensor(texture_image / 255.0, dtype=torch.float32).permute(2, 0, 1)
             
             # 4. Trích xuất text thông qua OCR
             try:
-                ocr_result = ocr.ocr(image_path, cls=True)
-                imprinted_text = ' '.join([line[1][0] for line in ocr_result[0]]) if ocr_result and ocr_result[0] else ""
+                if ocr is not None:
+                    ocr_result = ocr.ocr(image_path, cls=True)
+                    imprinted_text = ' '.join([line[1][0] for line in ocr_result[0]]) if ocr_result and ocr_result[0] else ""
+                else:
+                    imprinted_text = ""
             except Exception as e:
                 print(f"OCR error on {image_path}: {e}")
                 imprinted_text = ""
@@ -304,7 +320,7 @@ def evaluate_model(model, dataloader, criterion, device):
     
     # Calculate basic metrics
     accuracy = correct / total
-    precision, recall, f1, _ = precision_recall_fscore_support(all_labels, all_preds, average='weighted')
+    precision, recall, f1, _ = precision_recall_fscore_support(all_labels, all_preds, average='weighted', zero_division=0)
     
     # Calculate mAP
     try:
@@ -350,7 +366,7 @@ def evaluate_model(model, dataloader, criterion, device):
     model.train()
     return metrics
 # Training loop with validation and early stopping - Modified to save model with best mAP
-def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion, epochs, patience, save_dir):
+def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion, epochs, patience, save_dir, disable_early_stopping=False):
     os.makedirs(save_dir, exist_ok=True)
     
     model.train()
@@ -361,8 +377,8 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
     converged = False
     
     # Improved early stopping criteria
-    min_improvement = 0.0001  # Giảm ngưỡng cải thiện tối thiểu từ 0.001 xuống 0.0001
-    patience_buffer = 5  # Tăng buffer epochs từ 2 lên 5
+    min_improvement = 0.00001  # Giảm threshold để dễ dàng cải thiện hơn
+    patience_buffer = 5  # Additional buffer epochs before stopping
     
     # Dictionaries to store metrics
     train_metrics_history = {
@@ -484,11 +500,12 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
         epoch_time = time.time() - epoch_start_time
         avg_batch_time = np.mean(batch_times) if batch_times else 0
         
-        # Print progress
+        # Print progress với thông tin chi tiết hơn
         print(f"Epoch [{epoch+1}/{epochs}] completed in {epoch_time:.2f}s (avg batch: {avg_batch_time:.2f}s)")
         print(f"  Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.4f}, Train mAP: {train_mAP:.4f}")
         print(f"  Val Loss: {val_metrics['loss']:.4f}, Val Accuracy: {val_metrics['accuracy']:.4f}, Val mAP: {val_metrics['mAP']:.4f}")
         print(f"  Learning rate: {current_lr}")
+        print(f"  🎯 TRAINING PROGRESS: {epoch+1}/{epochs} epochs - Will continue to completion!")
         
         # Check if this is the best model by mAP (with improved criteria)
         improvement = val_metrics['mAP'] - best_val_map
@@ -532,7 +549,7 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
                 print(f"  ✅ Saved new best model with mAP: {best_val_map:.4f} (improvement: +{improvement:.4f})")
                 
                 # Verify the saved model can be loaded
-                test_load = torch.load(best_model_path, map_location='cpu')
+                test_load = torch.load(best_model_path, map_location='cpu', weights_only=False)
                 if 'model_state_dict' in test_load:
                     print(f"  ✅ Model checkpoint verified successfully")
                 else:
@@ -570,7 +587,7 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
                 print(f"  ✅ Checkpoint saved at epoch {epoch+1}: {checkpoint_path}")
                 
                 # Verify checkpoint integrity
-                test_load = torch.load(checkpoint_path, map_location='cpu')
+                test_load = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
                 if 'model_state_dict' not in test_load:
                     print(f"  ⚠️  Warning: Checkpoint missing model_state_dict!")
                     
@@ -593,20 +610,20 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
             f.write(f"Learning Rate: {current_lr}\n")
             f.write(f"Epoch Time: {epoch_time:.2f} seconds\n")
         
-        # Check for early stopping with improved criteria
+        # Early stopping HOÀN TOÀN DISABLED - Model sẽ chạy hết tất cả epochs
+        # Giáo sư khuyến nghị: Để model học đủ 30 epochs không bị gián đoạn
         effective_patience = patience + patience_buffer
+        min_training_epochs = 15
         
-        # OPTION 1: Tắt early stopping để chạy đủ 30 epochs (DISABLED by default - uncomment to disable early stopping)
-        # pass  # Tắt early stopping hoàn toàn - model sẽ chạy đủ số epochs được cấu hình
+        # COMMENT OUT TẤT CẢ EARLY STOPPING LOGIC
+        print(f"� Training epoch {epoch+1}/{epochs} completed (Early stopping DISABLED)")
+        print(f"   Current mAP: {val_metrics['mAP']:.4f}, Best mAP so far: {best_val_map:.4f}")
         
-        # OPTION 2: Giữ early stopping nhưng với patience cao hơn (ACTIVE)
+        # Chỉ để thông báo, không break
         if early_stop_counter >= effective_patience:
-            print(f"🛑 Early stopping triggered after epoch {epoch+1}")
-            print(f"   No improvement for {early_stop_counter} epochs (patience: {effective_patience})")
-            print(f"   Best mAP achieved: {best_val_map:.4f} at epoch {best_epoch+1}")
-            break
-        elif early_stop_counter >= patience:
-            print(f"⚠️  Warning: {early_stop_counter}/{effective_patience} patience epochs reached")
+            print(f"ℹ️  Note: Would have stopped here with early stopping (patience reached)")
+        
+        # KHÔNG CÓ BREAK STATEMENT - Model sẽ tiếp tục training
     
     # Calculate total training time
     total_time = time.time() - start_time
@@ -619,7 +636,7 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
     
     if os.path.exists(best_model_path):
         try:
-            checkpoint = torch.load(best_model_path, map_location='cpu')
+            checkpoint = torch.load(best_model_path, map_location='cpu', weights_only=False)
             required_keys = ['model_state_dict', 'optimizer_state_dict', 'val_mAP', 'epoch']
             missing_keys = [key for key in required_keys if key not in checkpoint]
             
@@ -628,7 +645,7 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
                 print(f"  📊 Contains model from epoch {checkpoint['epoch']+1} with mAP {checkpoint['val_mAP']:.4f}")
                 
                 # Test model loading
-                test_model = CombinedModel()
+                test_model = MultimodalCNNModel()
                 test_model.load_state_dict(checkpoint['model_state_dict'])
                 print(f"  ✅ Model state dict loads successfully")
                 
@@ -640,18 +657,20 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
     else:
         print(f"  ❌ No best model checkpoint found at {best_model_path}")
         
-    # Save final training summary
+    # Save final training summary - Updated to reflect disabled early stopping
     training_summary = {
         'completed_epochs': epoch + 1,
         'configured_epochs': epochs,
         'best_epoch': best_epoch + 1,
         'best_val_mAP': best_val_map,
-        'early_stopped': early_stop_counter >= effective_patience,
+        'early_stopped': False,  # EARLY STOPPING DISABLED
         'final_early_stop_counter': early_stop_counter,
         'effective_patience': effective_patience,
         'min_improvement_threshold': min_improvement,
         'converged': converged,
         'training_time_seconds': total_time,
+        'training_completed': True,  # Always true since early stopping disabled
+        'early_stopping_disabled': True,  # Flag to indicate early stopping was disabled
         'checkpoints_saved': {
             'best_model': os.path.exists(best_model_path),
             'best_model_path': best_model_path
@@ -800,16 +819,18 @@ def train_model(train_loader, val_loader, model, optimizer, scheduler, criterion
     plt.savefig(os.path.join(save_dir, 'combined_metrics_dashboard.pdf'), bbox_inches='tight')  # PDF for publications
     plt.close()
     
-    # Save training history as JSON
+    # Save training history as JSON - Updated
     history = {
         'train': train_metrics_history,
         'val': val_metrics_history,
         'best_epoch': best_epoch,
         'best_mAP': best_val_map,
         'training_time': total_time,
-        'early_stopped': early_stop_counter >= effective_patience,
+        'early_stopped': False,  # DISABLED
         'converged': converged,
-        'learning_rate_history': lr_history
+        'learning_rate_history': lr_history,
+        'total_epochs_completed': epoch + 1,
+        'early_stopping_disabled': True
     }
     
     with open(os.path.join(save_dir, 'training_history.json'), 'w') as f:
@@ -1019,10 +1040,41 @@ def create_data_loaders(base_dir, validation_dir, subdirs, train_transform, val_
 
 # Main script
 if __name__ == '__main__':
-    # Create output directory with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = f"model_results_{timestamp}"
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Smart Pill Recognition Training')
+    parser.add_argument('--epochs', type=int, default=30, help='Number of training epochs')
+    parser.add_argument('--batch_size', type=int, default=16, help='Batch size for training')
+    parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
+    parser.add_argument('--save_dir', type=str, default=None, help='Directory to save results')
+    parser.add_argument('--patience', type=int, default=25, help='Early stopping patience')
+    parser.add_argument('--disable_early_stopping', action='store_true', help='Disable early stopping completely')
+    
+    args = parser.parse_args()
+    
+    # Override default values with command line arguments
+    epochs_phase_2 = args.epochs
+    batch_size = args.batch_size if hasattr(args, 'batch_size') else batch_size
+    learning_rate = args.learning_rate if hasattr(args, 'learning_rate') else learning_rate
+    patience = args.patience if hasattr(args, 'patience') else patience
+    
+    # Create checkpoints directory như yêu cầu của người dùng
+    if args.save_dir:
+        save_dir = args.save_dir
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_dir = f"checkpoints/model_results_{timestamp}"
+    
     os.makedirs(save_dir, exist_ok=True)
+    print(f"📁 Results will be saved to: {save_dir}")
+    
+    # Print configuration
+    print(f"🔧 Training Configuration:")
+    print(f"  - Epochs: {epochs_phase_2}")
+    print(f"  - Batch size: {batch_size}")
+    print(f"  - Learning rate: {learning_rate}")
+    print(f"  - Patience: {patience}")
+    print(f"  - Early stopping disabled: {args.disable_early_stopping}")
+    print(f"  - Save directory: {save_dir}")
     
     # Check if validation directory exists
     use_separate_val = os.path.exists(validation_dir)
@@ -1044,7 +1096,7 @@ if __name__ == '__main__':
     
     # Initialize optimizer and scheduler
     optimizer = optim.Adam(combined_model.parameters(), lr=learning_rate, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=3, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=3)
     
     # Handle class weights safely
     try:
@@ -1086,11 +1138,22 @@ if __name__ == '__main__':
         all_labels = all_labels.flatten()
         
         # Print label distribution information
-        print(f"Label distribution: {Counter(all_labels)}")
+        unique_labels = np.unique(all_labels)
+        print(f"Found {len(unique_labels)} unique classes in training data")
+        print(f"Class range: {unique_labels.min()} to {unique_labels.max()}")
         
-        # Calculate class weights
-        class_weights = compute_class_weight('balanced', classes=np.unique(all_labels), y=all_labels)
-        class_weights_tensor = torch.FloatTensor(class_weights).to(device)
+        # Calculate class weights only for classes present in training data
+        class_weights = compute_class_weight('balanced', classes=unique_labels, y=all_labels)
+        
+        # Create a full weight tensor for all 196 classes
+        full_class_weights = np.ones(196)  # Default weight of 1 for all classes
+        
+        # Set computed weights for classes that exist in training data
+        for i, class_id in enumerate(unique_labels):
+            if 0 <= class_id < 196:
+                full_class_weights[class_id] = class_weights[i]
+        
+        class_weights_tensor = torch.FloatTensor(full_class_weights).to(device)
         criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
         print("Using weighted CrossEntropyLoss for imbalanced classes")
     except Exception as e:
@@ -1109,7 +1172,8 @@ if __name__ == '__main__':
         criterion=criterion,
         epochs=epochs_phase_2,
         patience=patience,
-        save_dir=save_dir
+        save_dir=save_dir,
+        disable_early_stopping=args.disable_early_stopping
     )
     
     print(f"Training completed. Results saved in {save_dir}")

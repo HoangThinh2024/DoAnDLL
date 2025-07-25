@@ -640,28 +640,17 @@ class PillRecognitionWebUI:
 
             if st.session_state.training_active:
                 st.success("🟢 Training đang chạy")
-
-                # Mock training progress
-                current_epoch = st.empty()
-                progress_bar = st.progress(0)
-
-                # Simulated training metrics
-                loss_chart = st.empty()
-                acc_chart = st.empty()
-
-                # Stop button
-                if st.button("🛑 Dừng Training"):
-                    st.session_state.training_active = False
-                    st.rerun()
+                # Show real-time training progress
+                self.show_real_training_progress()
             else:
                 st.info("⏸️ Không có training nào đang chạy")
 
                 # Dataset info
                 st.markdown("#### 📁 Dataset Info")
-                st.metric("Train images", "12,678")
-                st.metric("Val images", "2,115")
-                st.metric("Test images", "1,054")
-                st.metric("Classes", "156")
+                st.metric("Train images", "446")
+                st.metric("Val images", "112") 
+                st.metric("Test images", "558")
+                st.metric("Active Classes", "16")
 
         # Start training button
         st.markdown("---")
@@ -673,74 +662,125 @@ class PillRecognitionWebUI:
                     self.start_training(epochs, batch_size, learning_rate, model_type, train_method)
     
     def start_training(self, epochs, batch_size, learning_rate, model_type, train_method):
-        """Bắt đầu quá trình training với lựa chọn phương pháp, giữ trạng thái qua nhiều epoch"""
-        if 'training_epoch' not in st.session_state:
-            st.session_state.training_epoch = 0
-        if 'training_metrics' not in st.session_state:
-            st.session_state.training_metrics = []
-        st.session_state.training_active = True
-
-        st.success(f"🚀 Đã bắt đầu training với {epochs} epochs!")
-        st.info(f"📊 Config: Batch size={batch_size}, LR={learning_rate}, Model={model_type}, Phương pháp={train_method}")
-
-        progress_placeholder = st.empty()
-
-        with progress_placeholder.container():
-            st.markdown(f"### 🔄 Training Progress ({train_method})")
-            epoch_progress = st.progress(st.session_state.training_epoch / epochs)
-            current_metrics = st.empty()
-
-            # Training simulation cho từng phương pháp
-            for epoch in range(st.session_state.training_epoch, min(epochs, st.session_state.training_epoch + 5)):
-                epoch_progress.progress((epoch + 1) / epochs)
-
-                # Simulate metrics
-                if train_method == "Bình thường (PyTorch)":
-                    train_loss = 2.5 - (epoch * 0.3) + np.random.normal(0, 0.1)
-                    val_loss = 2.3 - (epoch * 0.25) + np.random.normal(0, 0.1)
-                    train_acc = 0.3 + (epoch * 0.15) + np.random.normal(0, 0.02)
-                    val_acc = 0.35 + (epoch * 0.13) + np.random.normal(0, 0.02)
-                elif train_method == "Spark (PySpark)":
-                    train_loss = 2.2 - (epoch * 0.28) + np.random.normal(0, 0.12)
-                    val_loss = 2.1 - (epoch * 0.22) + np.random.normal(0, 0.12)
-                    train_acc = 0.32 + (epoch * 0.16) + np.random.normal(0, 0.03)
-                    val_acc = 0.36 + (epoch * 0.14) + np.random.normal(0, 0.03)
-                elif train_method == "Transformer (HuggingFace)":
-                    train_loss = 2.0 - (epoch * 0.25) + np.random.normal(0, 0.15)
-                    val_loss = 1.9 - (epoch * 0.20) + np.random.normal(0, 0.15)
-                    train_acc = 0.35 + (epoch * 0.18) + np.random.normal(0, 0.04)
-                    val_acc = 0.38 + (epoch * 0.15) + np.random.normal(0, 0.04)
-                else:
-                    train_loss = 2.5
-                    val_loss = 2.3
-                    train_acc = 0.3
-                    val_acc = 0.35
-
-                st.session_state.training_metrics.append({
-                    "epoch": epoch + 1,
-                    "train_loss": train_loss,
-                    "val_loss": val_loss,
-                    "train_acc": train_acc,
-                    "val_acc": val_acc,
-                    "method": train_method
-                })
-
-                current_metrics.markdown(f"""
-                **Epoch {epoch + 1}/{epochs} ({train_method})**
-                - Train Loss: {train_loss:.3f}
-                - Val Loss: {val_loss:.3f} 
-                - Train Acc: {train_acc:.3f}
-                - Val Acc: {val_acc:.3f}
-                """)
-                time.sleep(1)
-
-            st.session_state.training_epoch = epoch + 1
-            if st.session_state.training_epoch >= epochs:
-                st.session_state.training_active = False
-                st.success(f"✅ Training hoàn thành với phương pháp: {train_method}!")
-                st.session_state.training_epoch = 0
-                st.session_state.training_metrics = []
-            # Không rerun để giữ trạng thái
+        """Bắt đầu quá trình training thực với các parameters được chọn"""
+        import sys
+        from pathlib import Path
+        
+        # Add core module to path
+        project_root = Path(__file__).parent.parent.parent
+        sys.path.append(str(project_root / "core"))
+        
+        try:
+            from web_training import start_web_training
+            
+            # Start real training process
+            result = start_web_training(
+                epochs=epochs,
+                batch_size=batch_size,
+                learning_rate=learning_rate
+            )
+            
+            if result["status"] == "success":
+                st.session_state.training_active = True
+                st.session_state.training_info = result
+                st.success(f"🚀 Đã bắt đầu training thực với {epochs} epochs!")
+                st.info(f"📊 Cấu hình: Batch size={batch_size}, LR={learning_rate}, Model={model_type}")
+                st.info(f"📁 Kết quả sẽ được lưu tại: {result['save_dir']}")
+                st.info(f"📋 Log file: {result['log_file']}")
+                
+                # Show real-time training status
+                self.show_real_training_progress()
+            else:
+                st.error(f"❌ Lỗi khởi động training: {result['message']}")
+                
+        except ImportError as e:
+            st.error(f"❌ Không thể import web_training module: {e}")
+        except Exception as e:
+            st.error(f"❌ Lỗi trong quá trình training: {e}")
+    
+    def show_real_training_progress(self):
+        """Hiển thị tiến trình training thực"""
+        if 'training_info' not in st.session_state:
+            return
+            
+        try:
+            import sys
+            from pathlib import Path
+            
+            # Add core module to path
+            project_root = Path(__file__).parent.parent.parent
+            sys.path.append(str(project_root / "core"))
+            
+            from web_training import get_web_training_status, get_web_training_log, stop_web_training
+            
+            # Create containers for real-time updates
+            status_container = st.container()
+            progress_container = st.container()
+            log_container = st.container()
+            
+            with status_container:
+                status = get_web_training_status()
+                
+                if status["status"] == "running":
+                    st.success(f"🟢 Training đang chạy (PID: {status['pid']})")
+                    
+                    # Progress bar
+                    with progress_container:
+                        if "progress" in status:
+                            st.progress(status["progress"] / 100)
+                            if "current_epoch" in status and "total_epochs" in status:
+                                st.write(f"Epoch {status['current_epoch']}/{status['total_epochs']}")
+                        
+                        # Metrics display
+                        if "metrics" in status:
+                            metrics = status["metrics"]
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if "val_mAP" in metrics:
+                                    st.metric("Validation mAP", f"{metrics['val_mAP']:.4f}")
+                            with col2:
+                                if "val_accuracy" in metrics:
+                                    st.metric("Validation Accuracy", f"{metrics['val_accuracy']:.4f}")
+                    
+                    # Stop button
+                    if st.button("🛑 Dừng Training"):
+                        stop_result = stop_web_training()
+                        if stop_result["status"] == "success":
+                            st.session_state.training_active = False
+                            st.success("✅ Training đã được dừng")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Không thể dừng training: {stop_result['message']}")
+                
+                elif status["status"] == "completed":
+                    st.success("✅ Training đã hoàn thành!")
+                    st.session_state.training_active = False
+                    
+                    # Show final results
+                    if "progress" in status:
+                        st.progress(1.0)
+                        st.write("Training hoàn thành 100%")
+                
+                elif status["status"] == "failed":
+                    st.error(f"❌ Training thất bại (exit code: {status.get('exit_code', 'unknown')})")
+                    st.session_state.training_active = False
+                
+                elif status["status"] == "inactive":
+                    st.info("⏸️ Không có training nào đang chạy")
+                    st.session_state.training_active = False
+            
+            # Show recent log output
+            with log_container:
+                if st.expander("📋 Training Log (Recent 30 lines)", expanded=False):
+                    log_content = get_web_training_log(lines=30)
+                    if log_content:
+                        st.code(log_content, language="text")
+                    else:
+                        st.info("Chưa có log nào")
+                        
+        except Exception as e:
+            st.error(f"❌ Lỗi khi kiểm tra status training: {e}")
+            st.session_state.training_active = False
     
     def show_analytics_page(self):
         """Trang phân tích và thống kê, so sánh hiệu năng các phương pháp huấn luyện"""

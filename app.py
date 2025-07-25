@@ -60,7 +60,7 @@ except ImportError as e:
         pass
     CUREDataset = PillDataset = MultimodalPillTransformer = MetricsCalculator = DummyClass
     PortManager = DummyClass
-
+    
 # Initialize GPU optimizations for Quadro 6000
 try:
     optimize_for_quadro_6000()
