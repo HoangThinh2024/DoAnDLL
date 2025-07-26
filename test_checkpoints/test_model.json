@@ -1,0 +1,7 @@
+{
+  "epoch": 3,
+  "simulation": true,
+  "final_accuracy": 0.6959142970117297,
+  "training_method": "simulation",
+  "model_type": "multimodal_transformer"
+}
