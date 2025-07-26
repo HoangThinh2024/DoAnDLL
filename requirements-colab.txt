@@ -1,0 +1,56 @@
+# Colab-Optimized Requirements for Smart Pill Recognition System
+# Optimized for Google Colab's GPU environment (Tesla T4/V100)
+
+# ================================
+# 🧠 Core AI/ML Dependencies
+# ================================
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.30.0
+timm>=0.9.0
+datasets>=2.12.0
+
+# ================================
+# 📊 Data Science & Processing 
+# ================================
+numpy>=1.21.0
+pandas>=1.5.0
+Pillow>=9.0.0
+opencv-python-headless>=4.7.0
+scikit-learn>=1.2.0
+
+# ================================
+# 🌐 Visualization & UI
+# ================================
+matplotlib>=3.6.0
+seaborn>=0.11.0
+plotly>=5.14.0
+ipywidgets>=8.0.0
+tqdm>=4.64.0
+
+# ================================
+# 🔧 Utilities & Text Processing
+# ================================
+nltk>=3.8.0
+rich>=13.0.0
+pyyaml>=6.0.0
+requests>=2.28.0
+
+# ================================
+# ⚡ Performance & Acceleration
+# ================================
+accelerate>=0.20.0
+safetensors>=0.3.0
+
+# ================================
+# 📝 Jupyter & Colab Specific
+# ================================
+ipython>=8.0.0
+jupyter>=1.0.0
+google-colab>=1.0.0
+
+# ================================
+# 🛠️ Development Tools
+# ================================
+pytest>=7.0.0
+black>=22.0.0
