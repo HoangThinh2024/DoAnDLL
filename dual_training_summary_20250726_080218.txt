@@ -1,0 +1,13 @@
+Dual Training Summary
+===================
+
+Timestamp: 2025-07-26T08:02:18.036729
+Total Time: 125.19s
+
+PySpark Results:
+  Status: success
+  Time: 15.73s
+
+PyTorch Results:
+  Status: success
+  Time: 107.46s

@@ -26,8 +26,21 @@ class WebTrainingManager:
         
     def start_training(self, epochs=30, batch_size=16, learning_rate=1e-4, save_dir=None):
         """Start real training process for Web UI"""
+        # Check if training is actually active or just a stale state
         if self.training_active:
-            return {"status": "error", "message": "Training already active"}
+            # Verify if process is really running
+            if self.training_process is not None:
+                poll = self.training_process.poll()
+                if poll is not None:
+                    # Process has finished, reset state
+                    self.training_active = False
+                    self.training_process = None
+                else:
+                    # Process is still running
+                    return {"status": "error", "message": "Training already active"}
+            else:
+                # No process but marked as active - reset state
+                self.training_active = False
             
         # Setup save directory
         if save_dir is None:

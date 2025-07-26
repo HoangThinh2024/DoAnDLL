@@ -271,7 +271,14 @@ def predict_pill(model, image_tensor, text_imprint: str,
     
     except Exception as e:
         st.error(f"Error during prediction: {str(e)}")
-        return None
+        return {
+            "predictions": [],
+            "features": {
+                "visual": np.zeros((1, 768)),
+                "text": np.zeros((1, 768)),
+                "fused": np.zeros((1, 768))
+            }
+        }
 
 
 def display_prediction_results(results: Dict[str, Any]):

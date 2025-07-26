@@ -1,0 +1,19 @@
+Dual Training Summary
+===================
+
+Timestamp: 2025-07-26T07:46:47.426673
+Total Time: 116.98s
+
+PySpark Results:
+  Status: failed
+  Error: 7215/iDragonCloud/DoAnDLL/.venv/lib/python3.10/site-packages/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+  File "/export/users/1177215/iDragonCloud/DoAnDLL/.venv/lib/python3.10/site-packages/pyspark/errors/exceptions/captured.py", line 175, in deco
+    raise converted from None
+pyspark.errors.exceptions.captured.IllegalArgumentException: Data type array<double> of column features is not supported.
+INFO:py4j.clientserver:Closing down clientserver connection
+
+
+PyTorch Results:
+  Status: success
+  Time: 103.50s
