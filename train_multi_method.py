@@ -199,6 +199,9 @@ class MultiMethodTrainer:
                            dataset_path: str,
                            model_name: str = None,
                            save_model: bool = True) -> Dict[str, Any]:
+        # Enforce real dataset path check
+        if not dataset_path or not os.path.exists(dataset_path) or 'dummy' in str(dataset_path).lower() or 'simulation' in str(dataset_path).lower():
+            raise ValueError(f"❌ Đường dẫn dữ liệu không hợp lệ hoặc là dữ liệu mô phỏng: '{dataset_path}'. Bạn phải truyền đường dẫn dữ liệu thật để train!")
         """
         Train model using a single method
         
@@ -629,10 +632,16 @@ Examples:
     if not args.command:
         parser.print_help()
         return
-    
+
+    # Enforce real dataset path check for CLI
+    if hasattr(args, 'dataset') and args.dataset:
+        if not os.path.exists(args.dataset) or 'dummy' in str(args.dataset).lower() or 'simulation' in str(args.dataset).lower():
+            print(f"❌ Đường dẫn dữ liệu không hợp lệ hoặc là dữ liệu mô phỏng: '{args.dataset}'. Bạn phải truyền đường dẫn dữ liệu thật để train!")
+            sys.exit(1)
+
     # Initialize trainer
     trainer = MultiMethodTrainer(args.config)
-    
+
     # Execute commands
     if args.command == 'train':
         results = trainer.train_single_method(
@@ -640,26 +649,26 @@ Examples:
             dataset_path=args.dataset,
             model_name=args.model
         )
-        
+
     elif args.command == 'train-all':
         results = trainer.train_all_methods(
             dataset_path=args.dataset,
             model_prefix=args.prefix
         )
-        
+
     elif args.command == 'benchmark':
         results = trainer.run_benchmark(
             dataset_path=args.dataset,
             output_dir=args.output,
             quick_mode=args.quick
         )
-        
+
     elif args.command == 'list-models':
         models = trainer.list_models(method=args.method)
-        
+
     elif args.command == 'load-model':
         model_info = trainer.load_model_for_analysis(args.model_id)
-        
+
     elif args.command == 'report':
         report = trainer.generate_comparison_report()
         print(f"\n📋 Comparison Report Generated")
