@@ -49,13 +49,36 @@ The Smart Pill Recognition System is a state-of-the-art **multimodal AI solution
 ### 📋 Prerequisites
 
 - **Python**: 3.10 or higher
-- **OS**: Ubuntu 20.04+, Windows 10+, macOS 12+
-- **RAM**: 8GB minimum (16GB recommended)
+- **OS**: Ubuntu 20.04+, Windows 10+, macOS 12+, or Google Colab
+- **RAM**: 8GB minimum (16GB recommended, 12GB+ for Colab)
 - **GPU**: NVIDIA GPU with CUDA 12.8+ (optional, CPU-only supported)
 
 ### ⚡ Installation
 
-#### Option 1: Automated Setup (Recommended)
+#### Option 1: Google Colab (Recommended for beginners)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/HoangThinh2024/DoAnDLL/blob/main/Smart_Pill_Recognition_Colab.ipynb)
+
+1. Click the "Open in Colab" badge above
+2. Run all cells in the notebook
+3. Upload your pill images and start training!
+
+**For detailed Colab setup:** See [COLAB_GUIDE.md](COLAB_GUIDE.md)
+
+#### Option 2: Automated Setup (Local development)
+```bash
+# Clone the repository
+git clone https://github.com/HoangThinh2024/DoAnDLL.git
+cd DoAnDLL
+
+# One-command setup with UV package manager
+chmod +x bin/pill-setup
+./bin/pill-setup
+
+# Activate environment
+source .venv/bin/activate
+```
+
+#### Option 3: Manual Setup
 ```bash
 # Clone the repository
 git clone https://github.com/HoangThinh2024/DoAnDLL.git
@@ -113,6 +136,8 @@ Launch the intuitive Streamlit web interface:
 python main.py web
 # Access at: http://localhost:8501
 ```
+
+**Google Colab users**: The web interface is integrated into the Colab notebook for seamless usage.
 
 **Features:**
 - 📸 Drag & drop image upload
@@ -260,7 +285,6 @@ Our system implements a novel **cross-modal attention architecture** that effect
 
 ### 🏃‍♂️ Training Your Own Model
 
-
 > **⚠️ Lưu ý quan trọng khi huấn luyện (Training):**
 >
 > - **Bạn phải truyền đường dẫn dữ liệu thật (dataset) khi train.** Nếu không, hệ thống sẽ báo lỗi và không thực hiện train mô phỏng mặc định.
@@ -268,7 +292,12 @@ Our system implements a novel **cross-modal attention architecture** that effect
 > - **Sau khi train thành công, kiểm tra thư mục `checkpoints/` để xác nhận đã sinh ra file model (`best_model.pth` hoặc tương tự).**
 > - Nếu không thấy file checkpoint, hãy kiểm tra lại đường dẫn dữ liệu, cấu hình, và log lỗi khi train.
 
-Ví dụ lệnh train với dữ liệu thật:
+**🌟 NEW: Google Colab Training** (Recommended for beginners)
+
+The easiest way to train your model is using our Colab notebook:
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/HoangThinh2024/DoAnDLL/blob/main/Smart_Pill_Recognition_Colab.ipynb)
+
+**Local Training Examples:**
 ```bash
 python train_multi_method.py train --method pytorch --dataset Dataset_BigData/CURE_dataset
 ```
@@ -392,6 +421,10 @@ python tools/profiler.py --model-path checkpoints/best_model.pth
 DoAnDLL/
 ├── 🚀 main.py                    # Main application launcher
 ├── 🌐 app.py                     # Streamlit web interface
+├── 🎯 Smart_Pill_Recognition_Colab.ipynb # Google Colab notebook
+├── 🔧 colab_setup.py            # Colab environment setup
+├── 🏋️ colab_trainer.py          # Colab-optimized trainer
+├── 📋 COLAB_GUIDE.md            # Complete Colab documentation
 ├── 📱 apps/                      # User interfaces
 │   ├── 🖥️ cli/                   # Command-line interface
 │   └── 🌐 web/                   # Web interface components
@@ -403,7 +436,7 @@ DoAnDLL/
 │   │   ├── cure_dataset.py
 │   │   └── data_processing.py
 │   ├── 🏋️ training/              # Training procedures
-│   │   ├── trainer.py           # Standard PyTorch trainer
+│   │   ├── trainer.py           # Enhanced trainer with fallbacks
 │   │   ├── spark_trainer.py     # Big data trainer
 │   │   └── hf_trainer.py        # HuggingFace trainer
 │   └── 🔧 utils/                 # Utilities & helpers
@@ -418,7 +451,9 @@ DoAnDLL/
 ├── 🐳 deploy/                    # Deployment configurations
 ├── 📚 docs/                      # Documentation
 ├── 🧪 tests/                     # Unit & integration tests
-└── 🔧 tools/                     # Development tools
+├── 🔧 tools/                     # Development tools
+├── 📋 requirements-colab.txt     # Colab-specific requirements
+└── 📋 requirements.txt           # Standard requirements
 ```
 
 ---
@@ -470,6 +505,19 @@ export MODEL_CACHE_DIR=./checkpoints  # Model cache location
 ---
 
 ## 🚀 Deployment
+
+### 🌟 Google Colab (Easiest)
+
+The fastest way to get started:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/HoangThinh2024/DoAnDLL/blob/main/Smart_Pill_Recognition_Colab.ipynb)
+
+**Features:**
+- ✅ No installation required
+- ✅ Free GPU access (Tesla T4/V100)
+- ✅ Pre-configured environment
+- ✅ Interactive training and testing
+- ✅ Easy data upload/download
 
 ### 🐳 Docker Deployment
 
